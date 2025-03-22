@@ -121,3 +121,38 @@ class BloodhoundAPI:
         except requests.exceptions.RequestException as e:
             print(f"Failed to get user info: {e}")
             return None
+        
+    def get_domains(self) -> List[Dict]:
+        """
+        Get all domains in the Bloodhound CE Instance
+        
+        Returns:
+            List of domain dictionaries
+        """
+        try:
+            response = self._request("GET", "/api/v2/available-domains")
+            response.raise_for_status()
+            return response.json()["data"]
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to get domains: {e}")
+            return []
+    def get_users(self, domain_id: str, limit: int = 100, skip: int = 0) -> Dict:
+        """
+        Gets Users in a specific domain
+        Limit: maixmum number of users to return (default: 100)
+        Skip: number of users to skip (default: 0)
+        
+        returns:
+            Dictionary of users and their data and the total number of users
+        """
+
+        try:
+            response = self._request("GET", f"/api/v2/domains/{domain_id}/users?limit={limit}&skip={skip}")
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to get users: {e}")
+            return {"data": [], "count": 0}
+
+
+        
