@@ -171,32 +171,6 @@ def get_gpos(domain_id: str, limit: int = 100, skip: int = 0):
             "error": f"Failed to retrieve GPOs: {str(e)}"
         })
 
-@mcp.tool()
-def run_cypher_query(query: str, include_properties: bool = False):
-    """
-    Runs a Cypher query against the Bloodhound database.
-    
-    Args:
-        query: The Cypher query to run
-        include_properties: Whether to include all properties of result nodes/edges (default: False)
-    """
-    try:
-        # Check if the API client has run_cypher method
-        if hasattr(bloodhound_api, 'run_cypher'):
-            result = bloodhound_api.run_cypher(query, include_properties)
-            return json.dumps({
-                "message": "Query executed successfully",
-                "result": result
-            })
-        else:
-            return json.dumps({
-                "error": "The run_cypher method is not available in the current BloodhoundAPI implementation"
-            })
-    except Exception as e:
-        logger.error(f"Error running Cypher query: {e}")
-        return json.dumps({
-            "error": f"Failed to run Cypher query: {str(e)}"
-        })
 
 async def main():
     """Main function to start the server"""
