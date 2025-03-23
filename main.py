@@ -128,7 +128,7 @@ def get_computers(domain_id: str, limit: int = 100, skip: int = 0):
 @mcp.tool()
 def get_controllers(domain_id: str, limit: int = 100, skip: int = 0):
     """
-    Retrieves domain controllers from a specific domain in the Bloodhound database.
+    Retrieves the controllers from a specific domain in the Bloodhound database.
     
     Args:
         domain_id: The ID of the domain to query
@@ -138,7 +138,7 @@ def get_controllers(domain_id: str, limit: int = 100, skip: int = 0):
     try:
         controllers = bloodhound_api.get_controllers(domain_id, limit=limit, skip=skip)
         return json.dumps({
-            "message": f"Found {controllers.get('count', 0)} domain controllers",
+            "message": f"Found {controllers.get('count', 0)} controllers",
             "controllers": controllers.get("data", []),
             "count": controllers.get("count", 0)
         })
