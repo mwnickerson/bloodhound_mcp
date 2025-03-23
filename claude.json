@@ -1,0 +1,22 @@
+{
+    "functions": [
+      {
+        "name": "query_bloodhound",
+        "description": "Query BloodHound for security information about an Active Directory environment",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "The natural language query about BloodHound data"
+            },
+            "context": {
+              "type": "object",
+              "description": "Additional context for the query (optional)"
+            }
+          },
+          "required": ["query"]
+        }
+      }
+    ]
+  }

@@ -8,9 +8,11 @@ import json
 import os
 from typing import Optional, Dict, List, Any
 from dotenv import load_dotenv
+from pathlib import Path
 
 # Load environment variables from .env file
-load_dotenv()
+env_path = (Path(__file__).resolve().parent.parent / ".env")
+load_dotenv(dotenv_path=env_path)
 
 class BloodhoundAPI:
     def __init__(self, domain: str = None, token_id: str = None, token_key: str = None, 
@@ -121,7 +123,9 @@ class BloodhoundAPI:
         except requests.exceptions.RequestException as e:
             print(f"Failed to get user info: {e}")
             return None
-        
+
+    # /api/v2/available-domains api use
+
     def get_domains(self) -> List[Dict]:
         """
         Get all domains in the Bloodhound CE Instance
@@ -136,6 +140,10 @@ class BloodhoundAPI:
         except requests.exceptions.RequestException as e:
             print(f"Failed to get domains: {e}")
             return []
+
+    # /api/v2/domains/{domain_id}/ api use
+    # used for finding general information about the domain
+    # this information will be fed into subsequent specific apis (users, gpos, ous, computers, etc )
     def get_users(self, domain_id: str, limit: int = 100, skip: int = 0) -> Dict:
         """
         Gets Users in a specific domain
@@ -147,12 +155,221 @@ class BloodhoundAPI:
         """
 
         try:
-            response = self._request("GET", f"/api/v2/domains/{domain_id}/users?limit={limit}&skip={skip}")
+            response = self._request("GET", f"/api/v2/domains/{domain_id}/users?limit={limit}&skip={skip}&type=list")
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
             print(f"Failed to get users: {e}")
             return {"data": [], "count": 0}
 
-
+    def get_groups(self, domain_id: str, limit: int = 100, skip: int = 0) -> Dict:
+        """
+        Gets Groups in a specific domain
+        Returns:
+            Dictionary of groups and their data and the total number of groups
+        """
+        try:
+            response = self._request("GET", f"/api/v2/domains/{domain_id}/groups?limit={limit}&skip={skip}&type=list")
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to get groups: {e}")
+            return {"data": [], "count": 0}
         
+    def get_computers(self, domain_id: str, limit: int = 100, skip: int = 0) -> Dict:
+        """
+        Gets Computers in specified domain
+        Returns:
+            Dictionary of computers and their data and the total number of computers
+        """
+        try:
+            response = self._request("GET", f"/api/v2/domains/{domain_id}/computers?limit={limit}&skip={skip}&type=list")
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to get computers: {e}")
+            return {"data": [], "count": 0}
+        
+    def get_controllers(self, domain_id: str, limit: int = 100, skip: int = 0) -> Dict:
+        """
+        Gets Controllers of the specified domain
+        Returns:
+            Dictionary of controller of the domain and their data and the total number ofcontrollers
+        """
+        try:
+            response = self._request("GET", f"/api/v2/domains/{domain_id}/controllers?limit={limit}&skip={skip}&type=list")
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to get controllers: {e}")
+            return {"data": [], "count": 0}
+
+    def get_dc_syncers(self, domain_id: str, limit: int = 100, skip: int = 0) -> Dict:
+        """
+        Gets DC Syncers of the specified domain
+        Returns:
+            Dictionary of DC Syncers of the domain and their data and the total number of DC Syncers
+        """
+        try:
+            response = self._request("GET", f"/api/v2/domains/{domain_id}/dc-syncers?limit={limit}&skip={skip}&type=list")
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to get DC Syncers: {e}")
+            return {"data": [], "count": 0}
+    
+    def get_foreign_admins(self, domain_id: str, limit: int = 100, skip: int = 0) -> Dict:
+        """
+        Gets Foreign Admins of the specified domain
+        Returns:
+            Dictionary of Foreign Admins of the domain and their data and the total number of Foreign Admins
+        """
+        try:
+            response = self._request("GET", f"/api/v2/domains/{domain_id}/foreign-admins?limit={limit}&skip={skip}&type=list")
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to get Foreign Admins: {e}")
+            return {"data": [], "count": 0}
+        
+    def get_foreign_gpo_controllers(self, domain_id: str, limit: int = 100, skip: int = 0) -> Dict:
+        """
+        Gets Foreign GPO Controllers of the specified domain
+        Returns:
+            Dictionary of Foreign GPO Controllers of the domain and their data and the total number of Foreign GPO Controllers
+        """
+        try:
+            response = self._request("GET", f"/api/v2/domains/{domain_id}/foreign-gpo-controllers?limit={limit}&skip={skip}&type=list")
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to get Foreign GPO Controllers: {e}")
+            return {"data": [], "count": 0}
+
+    def get_foreign_groups(self, domain_id: str, limit: int = 100, skip: int = 0) -> Dict:
+        """
+        Gets Foreign Groups of the specified domain
+        Returns:
+            Dictionary of Foreign Groups of the domain and their data and the total number of Foreign Groups
+        """
+        try:
+            response = self._request("GET", f"/api/v2/domains/{domain_id}/foreign-groups?limit={limit}&skip={skip}&type=list")
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to get Foreign Groups: {e}")
+            return {"data": [], "count": 0}
+
+    def get_foreign_users(self, domain_id: str, limit: int = 100, skip: int = 0) -> Dict:
+        """
+        Gets Foreign Users of the specified domain
+        Returns:
+            Dictionary of Foreign Users of the domain and their data and the total number of Foreign Users
+        """
+        try:
+            response = self._request("GET", f"/api/v2/domains/{domain_id}/foreign-users?limit={limit}&skip={skip}&type=list")
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to get Foreign Users: {e}")
+            return {"data": [], "count": 0}
+    
+    def get_gpos(self, domain_id: str, limit: int = 100, skip: int = 0) -> Dict:
+        """
+        Gets GPOs of the specified domain
+        Returns:
+            Dictionary of GPOs of the domain and their data and the total number of GPOs
+        """
+        try:
+            response = self._request("GET", f"/api/v2/domains/{domain_id}/gpos?limit={limit}&skip={skip}&type=list")
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to get GPOs: {e}")
+            return {"data": [], "count": 0}
+    
+    def get_inbound_trusts(self, domain_id: str, limit: int = 100, skip: int = 0) -> Dict:
+        """
+        Gets Inbound Trusts of the specified domain
+        Returns:
+            Dictionary of Inbound Trusts of the domain and their data and the total number of Inbound Trusts
+        """
+        try:
+            response = self._request("GET", f"/api/v2/domains/{domain_id}/inbound-trusts?limit={limit}&skip={skip}&type=list")
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to get Inbound Trusts: {e}")
+            return {"data": [], "count": 0}
+        
+    def get_linked_gpos(self, domain_id: str, limit: int = 100, skip: int = 0) -> Dict:
+        """
+        Gets Linked GPOs of the specified domain
+        Returns:
+            Dictionary of Linked GPOs of the domain and their data and the total number of Linked GPOs
+        """
+        try:
+            response = self._request("GET", f"/api/v2/domains/{domain_id}/linked-gpos?limit={limit}&skip={skip}&type=list")
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to get Linked GPOs: {e}")
+            return {"data": [], "count": 0}
+        
+    def get_ous(self, domain_id: str, limit: int = 100, skip: int = 0) -> Dict:
+        """
+        Gets OUs of the specified domain
+        Returns:
+            Dictionary of OUs of the domain and their data and the total number of OUs
+        """
+        try:
+            response = self._request("GET", f"/api/v2/domains/{domain_id}/ous?limit={limit}&skip={skip}&type=list")
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to get OUs: {e}")
+            return {"data": [], "count": 0}
+        
+    def get_outbound_trusts(self, domain_id: str, limit: int = 100, skip: int = 0) -> Dict:
+        """
+        Gets Outbound Trusts of the specified domain
+        Returns:
+            Dictionary of Outbound Trusts of the domain and their data and the total number of Outbound Trusts
+        """
+        try:
+            response = self._request("GET", f"/api/v2/domains/{domain_id}/outbound-trusts?limit={limit}&skip={skip}&type=list")
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to get Outbound Trusts: {e}")
+            return {"data": [], "count": 0}
+        
+   # /api/v2/users/{user_id}/ api use
+   # Using the user_id from the get_users api, we can get more detailed information about a specific user
+   # this api will be used to get more detailed information about a user and their relationships with other objects
+    #def get_user_info(self, user_id)
+
+
+
+
+   # /api/v2/groups/{group_id}/ api use
+
+
+
+   # /api/v2/computers/{computer_id}/ api use
+
+
+
+
+   # /api/v2/ous/{ou_id}/ api use
+
+
+
+
+    # /api/v2/gpos/{gpo_id}/ api use
+
+
+    # /api/v2/graphs/cypher api use
+    # for custom cypher queries
+
+    
