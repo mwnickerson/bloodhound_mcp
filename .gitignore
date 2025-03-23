@@ -1,0 +1,16 @@
+# Environment files containing secrets
+.env
+.env.*
+
+# Python-specific
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+
+# my specific files
+my-claude.json

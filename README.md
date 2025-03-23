@@ -1,6 +1,10 @@
 # Bloodhound Model Context Protocol Server
 In an effort to learn about how MCPs function and their use case, I created an MCP to allow for Claude Desktop to work with the Data in Bloodhound Community edition
 
+Video of its Usage
+
+https://youtu.be/eZBT0Iw9CMA
+
 ## Requirements
 1. I used uv, however i create a requirements.txt that should function using other methods
 2. python3
