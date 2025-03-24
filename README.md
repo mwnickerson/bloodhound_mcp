@@ -22,7 +22,9 @@ Start the conversation by asking about the domains
 
 
 ## Notes
-This is in its early stages and I have learned a lot about MCPs and how cool they are. I would like to continue working on this, however the current implementation is very very basic. 
+This is in its early stages and I have learned a lot about MCPs and how cool they are. I would like to continue working on this, however the current implementation is very very basic.
+
+UPDATE: I added fullish support for users in the domain, basically just look at the Bloodhound API documentation and it can answer any questions in the /domains and the /users api endpoints.
 
 The bloodhound ce API is massive and I need to first implement all of the api calls into the [bloodhound_api.py](./lib/bloodhound_api.py). Then functionality to make the MCP use them needs to be added. 
 
@@ -34,6 +36,9 @@ The bloodhound ce API is massive and I need to first implement all of the api ca
     - Controllers
     - GPOs
     - Computers
+    - Other stuff
+- Questions about specific users
+    - fullish support
 
 *What it does not support*
 - Everything else
