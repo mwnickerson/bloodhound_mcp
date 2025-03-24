@@ -6,7 +6,7 @@ Video of its Usage
 https://youtu.be/eZBT0Iw9CMA
 
 ## Requirements
-1. I used uv, however i create a requirements.txt that should function using other methods
+1. uv
 2. python3
 3. Claude Desktop
 4. A Bloodhoud CE instance running somewhere accessible (I ran it in my homelab)

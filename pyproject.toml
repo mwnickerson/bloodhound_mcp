@@ -1,0 +1,14 @@
+[project]
+name = "bloodhound-mcp"
+version = "0.1.0"
+description = "MCP for Connecting Claude Desktop to Bloodhound CE"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "argparse>=1.4.0",
+    "dotenv>=0.9.9",
+    "fastmcp>=0.4.1",
+    "logging>=0.4.9.6",
+    "requests>=2.32.3",
+    "typing>=3.10.0.0",
+]
