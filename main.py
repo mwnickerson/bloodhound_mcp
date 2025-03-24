@@ -36,7 +36,7 @@ bloodhound_api = BloodhoundAPI()
 def bloodhound_assistant() -> str:
     return """You are an AI assistant that helps security professionals analyze Active Directory environments using Bloodhound data.
     You can provide and anlyze information an organization's active directory environment. 
-    Specifics on what informaytion you can provide on and analyse include:
+    Specifics on what information you can provide on and analyse for a domain include:
     - Users
     - Groups
     - Computers
@@ -51,6 +51,21 @@ def bloodhound_assistant() -> str:
     - Inbound Trusts
     - Linked GPOs
     - Outbound Trusts
+    You also have the ability to look further into indivdual users within a domain. You can analyze which users are prime targets and how they can possibly be exploited.
+    By combining all of the below information you can provie on a user you can provide an in dpeth analysis of a user.
+    Information on the users includes:
+    - User's general information
+    - Administrative rights
+    - Constrained delegation rights
+    - Controllables
+    - Controllers
+    - DCOM rights
+    - Group memberships
+    - Remote PowerShell rights
+    - RDP rights
+    - Sessions
+    - SQL administrative rights
+    
     To get information, use the available tools to query the Bloodhound database."""
 
 # Define tools for the MCP
@@ -415,6 +430,280 @@ def get_outbound_trusts(domain_id: str, limit: int = 100, skip: int = 0):
         logger.error(f"Error retrieving outbound trusts: {e}")
         return json.dumps({
             "error": f"Failed to retrieve outbound trusts: {str(e)}"
+        })
+
+# mcp tools for the /users apis
+@mcp.tool()
+def get_user_info(user_id: str):
+    """
+    Retrieves information about a specific user in a specific domain.
+    This provides a general overview of a user's information including their name, domain, and other attributes.
+    It can be used to conduct reconnaissance and start formulating and targeting users within the domain
+    
+    Args:
+        user_id: The ID of the user to query
+    """
+    try:
+        user_info = bloodhound_api.get_user_info(user_id)
+        return json.dumps({
+            "message": f"User information for {user_info.get('name')}",
+            "user_info": user_info
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving user information: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve user information: {str(e)}"
+        })
+
+@mcp.tool()
+def get_user_admin_rights(user_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the administrative rights of a specific user in the domain.
+    Administrative rights are privileges that allow a user to perform administrative tasks on a Security Principal (user, group, or computer) in Active Directory.
+    These rights can be abused in a variety of ways include lateral movement, persistence, and privilege escalation.
+    
+    Args:
+        user_id: The ID of the user to query
+        limit: Maximum number of administrative rights to return (default: 100)
+        skip: Number of administrative rights to skip for pagination (default: 0)
+    """
+    try:
+        user_admin_rights = bloodhound_api.get_user_admin_rights(user_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {user_admin_rights.get('count', 0)} administrative rights for the user",
+            "user_admin_rights": user_admin_rights.get("data", []),
+            "count": user_admin_rights.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving user administrative rights: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve user administrative rights: {str(e)}"
+        })
+
+@mcp.tool()
+def get_user_constrained_delegation_rights(user_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the constrained delegation rights of a specific user within the domain.
+    Constrained delegation rights allow a user to impersonate another user or service when communicating with a service on another computer.
+    These rights can be abused for privilege escalation and lateral movement within the domain.
+    
+    Args:
+        user_id: The ID of the user to query
+        limit: Maximum number of constrained delegation rights to return (default: 100)
+        skip: Number of constrained delegation rights to skip for pagination (default: 0)
+    """
+    try:
+        user_constrained_delegation_rights = bloodhound_api.get_user_constrained_delegation_rights(user_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {user_constrained_delegation_rights.get('count', 0)} constrained delegation rights for the user",
+            "user_constrained_delegation_rights": user_constrained_delegation_rights.get("data", []),
+            "count": user_constrained_delegation_rights.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving user constrained delegation rights: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve user constrained delegation rights: {str(e)}"
+        })
+    
+@mcp.tool()
+def get_user_controllables(user_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the Security Princiapls within the domain that a specific user has administrative control over in the domain.
+    These are entities that the user can control and manipulate within the domain.
+    These are potential targets for lateral movement, privilege escalation, and persistence.
+    
+    Args:
+        user_id: The ID of the user to query
+        limit: Maximum number of controllables to return (default: 100)
+        skip: Number of controllables to skip for pagination (default: 0)
+    """
+    try:
+        user_controlables = bloodhound_api.get_user_controllables(user_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {user_controlables.get('count', 0)} controlables for the user",
+            "user_controlables": user_controlables.get("data", []),
+            "count": user_controlables.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving user controlables: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve user controlables: {str(e)}"
+        })
+
+@mcp.tool()
+def get_user_controllers(user_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the controllers of a specific user in the domain.
+    Controllers are entities that have control over the specified user
+    This can be used to help identify paths to gain access to a specific user.
+    
+    Args:
+        user_id: The ID of the user to query
+        limit: Maximum number of controllers to return (default: 100)
+        skip: Number of controllers to skip for pagination (default: 0)
+    """
+    try:
+        user_controllers = bloodhound_api.get_user_controllers(user_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {user_controllers.get('count', 0)} controllers for the user",
+            "user_controllers": user_controllers.get("data", []),
+            "count": user_controllers.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving user controllers: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve user controllers: {str(e)}"
+        })
+
+@mcp.tool()
+def get_user_dcom_rights(user_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the DCOM rights of a specific user within the domain.
+    DCOM rights allow a user to communicate with COM objects on another computer in the network.
+    These rights can be abused for privilege escalation and lateral movement within the domain.
+    
+    Args:
+        user_id: The ID of the user to query
+        limit: Maximum number of DCOM rights to return (default: 100)
+        skip: Number of DCOM rights to skip for pagination (default: 0)
+    """
+    try:
+        user_dcom_rights = bloodhound_api.get_user_dcom_rights(user_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {user_dcom_rights.get('count', 0)} DCOM rights for the user",
+            "user_dcom_rights": user_dcom_rights.get("data", []),
+            "count": user_dcom_rights.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving user DCOM rights: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve user DCOM rights: {str(e)}"
+        })
+
+@mcp.tool()
+def get_user_memberships(user_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the group memberships of a specific user within the domain.
+    Group memberships are the groups that a user is a member of within the domain.
+    These memberships can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        user_id: The ID of the user to query
+        limit: Maximum number of memberships to return (default: 100)
+        skip: Number of memberships to skip for pagination (default: 0)
+    """
+    try:
+        user_memberships = bloodhound_api.get_user_memberships(user_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {user_memberships.get('count', 0)} memberships for the user",
+            "user_memberships": user_memberships.get("data", []),
+            "count": user_memberships.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving user memberships: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve user memberships: {str(e)}"
+        })
+    
+@mcp.tool()
+def get_user_ps_remote_rights(user_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the remote PowerShell rights of a specific user within the domain.
+    Remote PowerShell rights allow a user to execute PowerShell commands on a remote computer.
+    These rights can be abused for lateral movement and privilege escalation within the domain.
+
+    Args:
+        user_id: The ID of the user to query
+        limit: Maximum number of remote PowerShell rights to return (default: 100)
+        skip: Number of remote PowerShell rights to skip for pagination
+    """
+    try:
+        user_ps_remote_rights = bloodhound_api.get_user_ps_remote_rights(user_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {user_ps_remote_rights.get('count', 0)} remote PowerShell rights for the user",
+            "user_ps_remote_rights": user_ps_remote_rights.get("data", []),
+            "count": user_ps_remote_rights.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving user remote PowerShell rights: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve user remote PowerShell rights: {str(e)}"
+        })
+
+@mcp.tool()
+def get_user_rdp_rights(user_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the RDP rights of a specific user within the domain.
+    RDP rights allow a user to remotely connect to another computer using the Remote Desktop Protocol.
+    These rights can be abused for lateral movement and privilege escalation within the domain.
+    
+    Args:
+        user_id: The ID of the user to query
+        limit: Maximum number of RDP rights to return (default: 100)
+        skip: Number of RDP rights to skip for pagination (default: 0)
+    """
+    try:
+        user_rdp_rights = bloodhound_api.get_user_rdp_rights(user_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {user_rdp_rights.get('count', 0)} RDP rights for the user",
+            "user_rdp_rights": user_rdp_rights.get("data", []),
+            "count": user_rdp_rights.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving user RDP rights: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve user RDP rights: {str(e)}"
+        })
+    
+@mcp.tool()
+def get_user_sessions(user_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the active sessions of a specific user within the domain.
+    Active sessions are the current sessions that a user has within the domain.
+    These sessions can be used to identify potential targets for lateral movement and privilege escalation.
+    It can also be used to indentify and plan attack paths within the domain.
+    
+    Args:
+        user_id: The ID of the user to query
+        limit: Maximum number of sessions to return (default: 100)
+        skip: Number of sessions to skip for pagination (default: 0)
+    """
+    try:
+        user_sessions = bloodhound_api.get_user_sessions(user_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {user_sessions.get('count', 0)} sessions for the user",
+            "user_sessions": user_sessions.get("data", []),
+            "count": user_sessions.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving user sessions: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve user sessions: {str(e)}"
+        })
+
+@mcp.tool()
+def get_user_sql_admin_rights(user_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the SQL administrative rights of a specific user within the domain.
+    SQL administrative rights allow a user to perform administrative tasks on a SQL Server.
+    These rights can be abused for lateral movement and privilege escalation within the domain.
+    
+    Args:
+        user_id: The ID of the user to query
+        limit: Maximum number of SQL administrative rights to return (default: 100)
+        skip: Number of SQL administrative rights to skip for pagination (default: 0)
+    """
+    try:
+        user_sql_admin_rights = bloodhound_api.get_user_sql_admin_rights(user_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {user_sql_admin_rights.get('count', 0)} SQL administrative rights for the user",
+            "user_sql_admin_rights": user_sql_admin_rights.get("data", []),
+            "count": user_sql_admin_rights.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving user SQL administrative rights: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve user SQL administrative rights: {str(e)}"
         })
 
 async def main():
