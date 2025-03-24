@@ -14,3 +14,10 @@ env/
 
 # my specific files
 my-claude.json
+
+# mac files
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
