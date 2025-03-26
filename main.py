@@ -73,11 +73,8 @@ def bloodhound_assistant() -> str:
 # mcp tools for the /domains apis
 @mcp.tool()
 def get_domains():
-    """
-    Retrieves all domains from the Bloodhound database.
-    """
     try:
-        domains = bloodhound_api.get_domains()
+        domains = bloodhound_api.domains.get_all()
         return json.dumps({
             "message": f"Found {len(domains)} domains in Bloodhound",
             "domains": domains
@@ -87,7 +84,7 @@ def get_domains():
         return json.dumps({
             "error": f"Failed to retrieve domains: {str(e)}"
         })
-
+    
 @mcp.tool()
 def get_users(domain_id: str, limit: int = 100, skip: int = 0):
     """
@@ -99,7 +96,7 @@ def get_users(domain_id: str, limit: int = 100, skip: int = 0):
         skip: Number of users to skip for pagination (default: 0)
     """
     try:
-        users = bloodhound_api.get_users(domain_id, limit=limit, skip=skip)
+        users = bloodhound_api.domains.get_users(domain_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {users.get('count', 0)} users in the domain",
             "users": users.get("data", []),
@@ -122,7 +119,7 @@ def get_groups(domain_id: str, limit: int = 100, skip: int = 0):
         skip: Number of groups to skip for pagination (default: 0)
     """
     try:
-        groups = bloodhound_api.get_groups(domain_id, limit=limit, skip=skip)
+        groups = bloodhound_api.domains.get_groups(domain_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {groups.get('count', 0)} groups in the domain",
             "groups": groups.get("data", []),
@@ -145,7 +142,7 @@ def get_computers(domain_id: str, limit: int = 100, skip: int = 0):
         skip: Number of computers to skip for pagination (default: 0)
     """
     try:
-        computers = bloodhound_api.get_computers(domain_id, limit=limit, skip=skip)
+        computers = bloodhound_api.domains.get_computers(domain_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {computers.get('count', 0)} computers in the domain",
             "computers": computers.get("data", []),
@@ -170,7 +167,7 @@ def get_controllers(domain_id: str, limit: int = 100, skip: int = 0):
         skip: Number of controllers to skip for pagination (default: 0)
     """
     try:
-        controllers = bloodhound_api.get_controllers(domain_id, limit=limit, skip=skip)
+        controllers = bloodhound_api.domains.get_controllers(domain_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {controllers.get('count', 0)} controllers",
             "controllers": controllers.get("data", []),
@@ -195,7 +192,7 @@ def get_gpos(domain_id: str, limit: int = 100, skip: int = 0):
         skip: Number of GPOs to skip for pagination (default: 0)
     """
     try:
-        gpos = bloodhound_api.get_gpos(domain_id, limit=limit, skip=skip)
+        gpos = bloodhound_api.domains.get_gpos(domain_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {gpos.get('count', 0)} GPOs in the domain",
             "gpos": gpos.get("data", []),
@@ -220,7 +217,7 @@ def get_ous(domain_id: str, limit: int = 100, skip: int = 0):
         skip: Number of OUs to skip for pagination (default
     """
     try:
-        ous = bloodhound_api.get_ous(domain_id, limit=limit, skip=skip)
+        ous = bloodhound_api.domains.get_ous(domain_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {ous.get('count', 0)} OUs in the domain",
             "ous": ous.get("data", []),
@@ -245,7 +242,7 @@ def get_dc_syncers(domain_id: str, limit: int = 100, skip: int = 0):
         skip: Number of DC Syncers to skip for pagination (default: 0)
     """
     try:
-        dc_syncers = bloodhound_api.get_dc_syncers(domain_id, limit=limit, skip=skip)
+        dc_syncers = bloodhound_api.domains.get_dc_syncers(domain_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {dc_syncers.get('count', 0)} DC Syncers in the domain",
             "dc_syncers": dc_syncers.get("data", []),
@@ -270,7 +267,7 @@ def get_foreign_admins(domain_id: str, limit: int = 100, skip: int = 0):
         skip: Number of foreign admins to skip for pagination (default: 0)
     """
     try:
-        foreign_admins = bloodhound_api.get_foreign_admins(domain_id, limit=limit, skip=skip)
+        foreign_admins = bloodhound_api.domains.get_foreign_admins(domain_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {foreign_admins.get('count', 0)} foreign admins in the domain",
             "foreign_admins": foreign_admins.get("data", []),
@@ -295,7 +292,7 @@ def get_foreign_gpo_controllers(domain_id: str, limit: int = 100, skip: int = 0)
         skip: Number of foreign GPO controllers to skip for pagination (default: 0)
     """
     try:
-        foreign_gpo_controllers = bloodhound_api.get_foreign_gpo_controllers(domain_id, limit=limit, skip=skip)
+        foreign_gpo_controllers = bloodhound_api.domains.get_foreign_gpo_controllers(domain_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {foreign_gpo_controllers.get('count', 0)} foreign GPO controllers in the domain",
             "foreign_gpo_controllers": foreign_gpo_controllers.get("data", []),
@@ -320,7 +317,7 @@ def get_foreign_groups(domain_id: str, limit: int = 100, skip: int = 0):
         skip: Number of foreign groups to skip for pagination (default: 0)
     """
     try:
-        foreign_groups = bloodhound_api.get_foreign_groups(domain_id, limit=limit, skip=skip)
+        foreign_groups = bloodhound_api.domains.get_foreign_groups(domain_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {foreign_groups.get('count', 0)} foreign groups in the domain",
             "foreign_groups": foreign_groups.get("data", []),
@@ -345,7 +342,7 @@ def get_foreign_users(domain_id: str, limit: int = 100, skip: int = 0):
         skip: Number of foreign users to skip for pagination (default: 0)
     """
     try:
-        foreign_users = bloodhound_api.get_foreign_users(domain_id, limit=limit, skip=skip)
+        foreign_users = bloodhound_api.domains.get_foreign_users(domain_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {foreign_users.get('count', 0)} foreign users in the domain",
             "foreign_users": foreign_users.get("data", []),
@@ -370,7 +367,7 @@ def get_inbound_trusts(domain_id: str, limit: int = 100, skip: int = 0):
         skip: Number of inbound trusts to skip for pagination (default: 0)
     """
     try:
-        inbound_trusts = bloodhound_api.get_inbound_trusts(domain_id, limit=limit, skip=skip)
+        inbound_trusts = bloodhound_api.domains.get_inbound_trusts(domain_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {inbound_trusts.get('count', 0)} inbound trusts in the domain",
             "inbound_trusts": inbound_trusts.get("data", []),
@@ -395,7 +392,7 @@ def get_linked_gpos(domain_id: str, limit: int = 100, skip: int = 0):
         skip: Number of linked GPOs to skip for pagination (default: 0)
     """
     try:
-        linked_gpos = bloodhound_api.get_linked_gpos(domain_id, limit=limit, skip=skip)
+        linked_gpos = bloodhound_api.domains.get_linked_gpos(domain_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {linked_gpos.get('count', 0)} linked GPOs in the domain",
             "linked_gpos": linked_gpos.get("data", []),
@@ -420,7 +417,7 @@ def get_outbound_trusts(domain_id: str, limit: int = 100, skip: int = 0):
         skip: Number of outbound trusts to skip for pagination (default: 0)
     """
     try:
-        outbound_trusts = bloodhound_api.get_outbound_trusts(domain_id, limit=limit, skip=skip)
+        outbound_trusts = bloodhound_api.domains.get_outbound_trusts(domain_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {outbound_trusts.get('count', 0)} outbound trusts in the domain",
             "outbound_trusts": outbound_trusts.get("data", []),
@@ -444,7 +441,7 @@ def get_user_info(user_id: str):
         user_id: The ID of the user to query
     """
     try:
-        user_info = bloodhound_api.get_user_info(user_id)
+        user_info = bloodhound_api.users.get_info(user_id)
         return json.dumps({
             "message": f"User information for {user_info.get('name')}",
             "user_info": user_info
@@ -468,7 +465,7 @@ def get_user_admin_rights(user_id: str, limit: int = 100, skip: int = 0):
         skip: Number of administrative rights to skip for pagination (default: 0)
     """
     try:
-        user_admin_rights = bloodhound_api.get_user_admin_rights(user_id, limit=limit, skip=skip)
+        user_admin_rights = bloodhound_api.users.get_admin_rights(user_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {user_admin_rights.get('count', 0)} administrative rights for the user",
             "user_admin_rights": user_admin_rights.get("data", []),
@@ -493,7 +490,7 @@ def get_user_constrained_delegation_rights(user_id: str, limit: int = 100, skip:
         skip: Number of constrained delegation rights to skip for pagination (default: 0)
     """
     try:
-        user_constrained_delegation_rights = bloodhound_api.get_user_constrained_delegation_rights(user_id, limit=limit, skip=skip)
+        user_constrained_delegation_rights = bloodhound_api.users.get_constrained_delegation_rights(user_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {user_constrained_delegation_rights.get('count', 0)} constrained delegation rights for the user",
             "user_constrained_delegation_rights": user_constrained_delegation_rights.get("data", []),
@@ -518,7 +515,7 @@ def get_user_controllables(user_id: str, limit: int = 100, skip: int = 0):
         skip: Number of controllables to skip for pagination (default: 0)
     """
     try:
-        user_controlables = bloodhound_api.get_user_controllables(user_id, limit=limit, skip=skip)
+        user_controlables = bloodhound_api.users.get_controllables(user_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {user_controlables.get('count', 0)} controlables for the user",
             "user_controlables": user_controlables.get("data", []),
@@ -543,7 +540,7 @@ def get_user_controllers(user_id: str, limit: int = 100, skip: int = 0):
         skip: Number of controllers to skip for pagination (default: 0)
     """
     try:
-        user_controllers = bloodhound_api.get_user_controllers(user_id, limit=limit, skip=skip)
+        user_controllers = bloodhound_api.users.get_controllers(user_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {user_controllers.get('count', 0)} controllers for the user",
             "user_controllers": user_controllers.get("data", []),
@@ -568,7 +565,7 @@ def get_user_dcom_rights(user_id: str, limit: int = 100, skip: int = 0):
         skip: Number of DCOM rights to skip for pagination (default: 0)
     """
     try:
-        user_dcom_rights = bloodhound_api.get_user_dcom_rights(user_id, limit=limit, skip=skip)
+        user_dcom_rights = bloodhound_api.users.get_dcom_rights(user_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {user_dcom_rights.get('count', 0)} DCOM rights for the user",
             "user_dcom_rights": user_dcom_rights.get("data", []),
@@ -593,7 +590,7 @@ def get_user_memberships(user_id: str, limit: int = 100, skip: int = 0):
         skip: Number of memberships to skip for pagination (default: 0)
     """
     try:
-        user_memberships = bloodhound_api.get_user_memberships(user_id, limit=limit, skip=skip)
+        user_memberships = bloodhound_api.users.get_memberships(user_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {user_memberships.get('count', 0)} memberships for the user",
             "user_memberships": user_memberships.get("data", []),
@@ -618,7 +615,7 @@ def get_user_ps_remote_rights(user_id: str, limit: int = 100, skip: int = 0):
         skip: Number of remote PowerShell rights to skip for pagination
     """
     try:
-        user_ps_remote_rights = bloodhound_api.get_user_ps_remote_rights(user_id, limit=limit, skip=skip)
+        user_ps_remote_rights = bloodhound_api.users.get_ps_remote_rights(user_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {user_ps_remote_rights.get('count', 0)} remote PowerShell rights for the user",
             "user_ps_remote_rights": user_ps_remote_rights.get("data", []),
@@ -643,7 +640,7 @@ def get_user_rdp_rights(user_id: str, limit: int = 100, skip: int = 0):
         skip: Number of RDP rights to skip for pagination (default: 0)
     """
     try:
-        user_rdp_rights = bloodhound_api.get_user_rdp_rights(user_id, limit=limit, skip=skip)
+        user_rdp_rights = bloodhound_api.users.get_rdp_rights(user_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {user_rdp_rights.get('count', 0)} RDP rights for the user",
             "user_rdp_rights": user_rdp_rights.get("data", []),
@@ -669,7 +666,7 @@ def get_user_sessions(user_id: str, limit: int = 100, skip: int = 0):
         skip: Number of sessions to skip for pagination (default: 0)
     """
     try:
-        user_sessions = bloodhound_api.get_user_sessions(user_id, limit=limit, skip=skip)
+        user_sessions = bloodhound_api.users.get_sessions(user_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {user_sessions.get('count', 0)} sessions for the user",
             "user_sessions": user_sessions.get("data", []),
@@ -694,7 +691,7 @@ def get_user_sql_admin_rights(user_id: str, limit: int = 100, skip: int = 0):
         skip: Number of SQL administrative rights to skip for pagination (default: 0)
     """
     try:
-        user_sql_admin_rights = bloodhound_api.get_user_sql_admin_rights(user_id, limit=limit, skip=skip)
+        user_sql_admin_rights = bloodhound_api.users.get_sql_admin_rights(user_id, limit=limit, skip=skip)
         return json.dumps({
             "message": f"Found {user_sql_admin_rights.get('count', 0)} SQL administrative rights for the user",
             "user_sql_admin_rights": user_sql_admin_rights.get("data", []),
@@ -705,6 +702,8 @@ def get_user_sql_admin_rights(user_id: str, limit: int = 100, skip: int = 0):
         return json.dumps({
             "error": f"Failed to retrieve user SQL administrative rights: {str(e)}"
         })
+
+
 
 async def main():
     """Main function to start the server"""
