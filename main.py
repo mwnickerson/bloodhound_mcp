@@ -65,6 +65,35 @@ def bloodhound_assistant() -> str:
     - RDP rights
     - Sessions
     - SQL administrative rights
+
+    You have the capability to look further into the groups within the domain. You can analyze the group memberships and how they can be exploited.
+    By combining all of the below information you can provie on a group you can provide an in dpeth analysis of a group. Additionally you can identify groups and their permissions to help determine attack paths
+    Information on the groups includes:
+    - Group's general information
+    - Administrative rights
+    - Constrained delegation rights
+    - Controllables
+    - Controllers
+    - DCOM rights
+    - Group memberships
+    - Remote PowerShell rights
+    - RDP rights
+    - Sessions
+    - SQL administrative rights
+    You can also look into the computers within the domain. You can analyze the computer memberships and how they can be exploited.
+    By combining all of the below information you can provie on a computer you can provide an in dpeth analysis of a computer.
+    Information on the computers includes:
+    - Computer's general information
+    - Administrative rights (both the rights the computer has over other machines and the rights other security principals have over the computer)
+    - Constrained delegation rights(both the rights the computer has over other machines and the rights other security principals have over the computer)
+    - Controllables
+    - Controllers
+    - DCOM rights (both the rights the computer has over other machines and the rights other security principals have over the computer)
+    - Group memberships
+    - Remote PowerShell rights (both the rights the computer has over other machines and the rights other security principals have over the computer)
+    - RDP rights (both the rights the computer has over other machines and the rights other security principals have over the computer)
+    - Sessions
+    - SQL administrative rights
     
     To get information, use the available tools to query the Bloodhound database."""
 
@@ -155,16 +184,26 @@ def get_computers(domain_id: str, limit: int = 100, skip: int = 0):
         })
 
 @mcp.tool()
-def get_controllers(domain_id: str, limit: int = 100, skip: int = 0):
+def get_security_controllers(domain_id: str, limit: int = 100, skip: int = 0):
     """
-    Retrieves the controllers from a specific domain in the Bloodhound database.
-    Controller are specific entities that have control privileges over other entities within the domain.
-    These are key for idenitfying potential attack paths.
+    Retrieves security principals that have control relationships over other objects in the domain.
+    
+    In Bloodhound terminology, a "controller" is any security principal (user, group, computer)
+    that has some form of control relationship (like AdminTo, WriteOwner, GenericAll, etc.) 
+    over another security object in the domain. These are NOT domain controllers (AD servers),
+    but rather represent control edges in the graph.
+    
+    These control relationships are key for identifying potential attack paths in the domain.
+    
+    Example controllers might include:
+    - A user with AdminTo rights on a computer
+    - A group with GenericAll rights over another group
+    - A user with WriteOwner rights over another user
     
     Args:
         domain_id: The ID of the domain to query
-        limit: Maximum number of controllers to return (default: 100)
-        skip: Number of controllers to skip for pagination (default: 0)
+        limit: Maximum number of control relationships to return (default: 100)
+        skip: Number of control relationships to skip for pagination (default: 0)
     """
     try:
         controllers = bloodhound_api.domains.get_controllers(domain_id, limit=limit, skip=skip)
@@ -703,8 +742,642 @@ def get_user_sql_admin_rights(user_id: str, limit: int = 100, skip: int = 0):
             "error": f"Failed to retrieve user SQL administrative rights: {str(e)}"
         })
 
+# mcp tools for the /groups apis
+@mcp.tool()
+def get_group_info(group_id: str):
+    """
+    Retrieves information about a specific group in a specific domain.
+    This provides a general overview of a group's information including their name, domain, and other attributes.
+    It can be used to conduct reconnaissance and start formulating and targeting groups within the domain
+    Args:
+        group_id: The ID of the group to query
+    """
+    try:
+        group_info = bloodhound_api.groups.get_info(group_id)
+        return json.dumps({
+            "message": f"Group information for {group_info.get('name')}",
+            "group_info": group_info
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving group information: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve group information: {str(e)}"
+        })
+    
+@mcp.tool()
+def get_group_admin_rights(group_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the administrative rights of a specific group in the domain.
+    Administrative rights are privileges that allow a group to perform administrative tasks on a Security Principal (user, group, or computer) in Active Directory.
+    These rights can be abused in a variety of ways include lateral movement, persistence, and privilege escalation.
+    
+    Args:
+        group_id: The ID of the group to query
+        limit: Maximum number of administrative rights to return (default: 100)
+        skip: Number of administrative rights to skip for pagination (default: 0)
+    """
+    try:
+        group_admin_rights = bloodhound_api.groups.get_admin_rights(group_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {group_admin_rights.get('count', 0)} administrative rights for the group",
+            "group_admin_rights": group_admin_rights.get("data", []),
+            "count": group_admin_rights.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving group administrative rights: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve group administrative rights: {str(e)}"
+        })
+    
+@mcp.tool()
+def get_group_controllables(group_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the Security Princiapls within the domain that a specific group has administrative control over in the domain.
+    These are entities that the group can control and manipulate within the domain.
+    These are potential targets for lateral movement, privilege escalation, and persistence.
+    
+    Args:
+        group_id: The ID of the group to query
+        limit: Maximum number of controllables to return (default: 100)
+        skip: Number of controllables to skip for pagination (default: 0)
+    """
+    try:
+        group_controlables = bloodhound_api.groups.get_controllables(group_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {group_controlables.get('count', 0)} controlables for the group",
+            "group_controlables": group_controlables.get("data", []),
+            "count": group_controlables.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving group controlables: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve group controlables: {str(e)}"
+        })
+    
+@mcp.tool()
+def get_group_controllers(group_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the controllers of a specific group in the domain.
+    Controllers are entities that have control over the specified group
+    This can be used to help identify paths to gain access to a specific group.
+    
+    Args:
+        group_id: The ID of the group to query
+        limit: Maximum number of controllers to return (default: 100)
+        skip: Number of controllers to skip for pagination (default: 0)
+    """
+    try:
+        group_controllers = bloodhound_api.groups.get_controllers(group_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {group_controllers.get('count', 0)} controllers for the group",
+            "group_controllers": group_controllers.get("data", []),
+            "count": group_controllers.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving group controllers: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve group controllers: {str(e)}"
+        })
+
+@mcp.tool()
+def get_group_dcom_rights(group_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the DCOM rights of a specific group within the domain.
+    DCOM rights allow a group to communicate with COM objects on another computer in the network.
+    These rights can be abused for privilege escalation and lateral movement within the domain.
+    Args:
+        group_id: The ID of the group to query
+        limit: Maximum number of DCOM rights to return (default: 100)
+        skip: Number of DCOM rights to skip for pagination (default: 0)
+    """
+    try:
+        group_dcom_rights = bloodhound_api.groups.get_dcom_rights(group_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {group_dcom_rights.get('count', 0)} DCOM rights for the group",
+            "group_dcom_rights": group_dcom_rights.get("data", []),
+            "count": group_dcom_rights.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving group DCOM rights: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve group DCOM rights: {str(e)}"
+        })
+
+@mcp.tool()
+def get_group_members(group_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the members of a specific group within the domain.
+    Group members are the users and groups that are members of the specified group.
+    These memberships can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        group_id: The ID of the group to query
+        limit: Maximum number of members to return (default: 100)
+        skip: Number of members to skip for pagination (default: 0)
+    """
+    try:
+        group_members = bloodhound_api.groups.get_members(group_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {group_members.get('count', 0)} members for the group",
+            "group_members": group_members.get("data", []),
+            "count": group_members.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving group members: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve group members: {str(e)}"
+        })
+    
+@mcp.tool()
+def get_group_memberships(group_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the group memberships of a specific group within the domain.
+    Group memberships are the groups that the specified group is a member of within the domain.
+    These memberships can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        group_id: The ID of the group to query
+        limit: Maximum number of memberships to return (default: 100)
+        skip: Number of memberships to skip for pagination (default: 0)
+    """
+    try:
+        group_memberships = bloodhound_api.groups.get_memberships(group_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {group_memberships.get('count', 0)} memberships for the group",
+            "group_memberships": group_memberships.get("data", []),
+            "count": group_memberships.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving group memberships: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve group memberships: {str(e)}"
+        })
+
+@mcp.tool()
+def get_group_ps_remote_rights(group_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the remote PowerShell rights of a specific group within the domain.
+    Remote PowerShell rights allow a group to execute PowerShell commands on a remote computer.
+    These rights can be abused for lateral movement and privilege escalation within the domain.
+    
+    Args:
+        group_id: The ID of the group to query
+        limit: Maximum number of remote PowerShell rights to return (default: 100)
+        skip: Number of remote PowerShell rights to skip for pagination (default: 0)
+    """
+    try:
+        group_ps_remote_rights = bloodhound_api.groups.get_ps_remote_rights(group_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {group_ps_remote_rights.get('count', 0)} remote PowerShell rights for the group",
+            "group_ps_remote_rights": group_ps_remote_rights.get("data", []),
+            "count": group_ps_remote_rights.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving group remote PowerShell rights: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve group remote PowerShell rights: {str(e)}"
+        })
+
+@mcp.tool()
+def get_group_rdp_rights(group_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the RDP rights of a specific group within the domain.
+    RDP rights allow a group to remotely connect to another computer using the Remote Desktop Protocol.
+    These rights can be abused for lateral movement and privilege escalation within the domain.
+    
+    Args:
+        group_id: The ID of the group to query
+        limit: Maximum number of RDP rights to return (default: 100)
+        skip: Number of RDP rights to skip for pagination (default: 0)
+    """
+    try:
+        group_rdp_rights = bloodhound_api.groups.get_rdp_rights(group_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {group_rdp_rights.get('count', 0)} RDP rights for the group",
+            "group_rdp_rights": group_rdp_rights.get("data", []),
+            "count": group_rdp_rights.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving group RDP rights: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve group RDP rights: {str(e)}"
+        })
+
+@mcp.tool()
+def get_group_sessions(group_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the active sessions of the members of a specific group within the domain.
+    Active sessions are the current sessions that hte members of this group have within the domain.
+    These sessions can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        group_id: The ID of the group to query
+        limit: Maximum number of sessions to return (default: 100)
+        skip: Number of sessions to skip for pagination (default: 0)
+    """
+    try:
+        group_sessions = bloodhound_api.groups.get_sessions(group_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {group_sessions.get('count', 0)} sessions for the group",
+            "group_sessions": group_sessions.get("data", []),
+            "count": group_sessions.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving group sessions: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve group sessions: {str(e)}"
+        })
+    
+# mcp tools for the /computers apis
+@mcp.tool()
+def get_computer_info(computer_id: str):
+    """
+    Retrieves information about a specific computer in a specific domain.
+    This provides a general overview of a computer's information including their name, domain, and other attributes.
+    It can be used to conduct reconnaissance and start formulating and targeting computers within the domain
+    Args:
+        computer_id: The ID of the computer to query
+    """
+    try:
+        computer_info = bloodhound_api.computers.get_info(computer_id)
+        return json.dumps({
+            "message": f"Computer information for {computer_info.get('name')}",
+            "computer_info": computer_info
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving computer information: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve computer information: {str(e)}"
+        })
+@mcp.tool()
+def get_computer_admin_rights(computer_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the administrative rights of a specific computer in the domain.
+    Administrative rights are privileges that allow a computer to perform administrative tasks on a Security Principal (user, group, or computer) in Active Directory.
+    These rights can be abused in a variety of ways include lateral movement, persistence, and privilege escalation.
+    
+    Args:
+        computer_id: The ID of the computer to query
+        limit: Maximum number of administrative rights to return (default: 100)
+        skip: Number of administrative rights to skip for pagination (default: 0)
+    """
+    try:
+        computer_admin_rights = bloodhound_api.computers.get_admin_rights(computer_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {computer_admin_rights.get('count', 0)} administrative rights for the computer",
+            "computer_admin_rights": computer_admin_rights.get("data", []),
+            "count": computer_admin_rights.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving computer administrative rights: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve computer administrative rights: {str(e)}"
+        })
+@mcp.tool()
+def get_computer_admin_users(computer_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the administrative users of a specific computer in the domain.
+    Administrative users are the users that have administrative access to the specified computer.
+    These users can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        computer_id: The ID of the computer to query
+        limit: Maximum number of administrative users to return (default: 100)
+        skip: Number of administrative users to skip for pagination (default: 0)
+    """
+    try:
+        computer_admin_users = bloodhound_api.computers.get_admin_users(computer_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {computer_admin_users.get('count', 0)} administrative users for the computer",
+            "computer_admin_users": computer_admin_users.get("data", []),
+            "count": computer_admin_users.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving computer administrative users: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve computer administrative users: {str(e)}"
+        })
+    
+@mcp.tool()
+def get_computer_constrained_delegation_rights(computer_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the constrained delegation rights of a specific computer within the domain.
+    Constrained delegation rights allow a computer to impersonate another user or service when communicating with a service on another computer.
+    These rights can be abused for privilege escalation and lateral movement within the domain.
+    
+    Args:
+        computer_id: The ID of the computer to query
+        limit: Maximum number of constrained delegation rights to return (default: 100)
+        skip: Number of constrained delegation rights to skip for pagination (default: 0)
+    """
+    try:
+        computer_constrained_delegation_rights = bloodhound_api.computers.get_constrained_delegation_rights(computer_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {computer_constrained_delegation_rights.get('count', 0)} constrained delegation rights for the computer",
+            "computer_constrained_delegation_rights": computer_constrained_delegation_rights.get("data", []),
+            "count": computer_constrained_delegation_rights.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving computer constrained delegation rights: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve computer constrained delegation rights: {str(e)}"
+        })
+
+@mcp.tool()
+def get_computer_constrained_users(computer_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the constrained users of a specific computer in the domain.
+    Constrained users are the users that have constrained delegation access to the specified computer.
+    These users can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        computer_id: The ID of the computer to query
+        limit: Maximum number of constrained users to return (default: 100)
+        skip: Number of constrained users to skip for pagination (default: 0)
+    """
+    try:
+        computer_constrained_users = bloodhound_api.computers.get_constrained_users(computer_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {computer_constrained_users.get('count', 0)} constrained users for the computer",
+            "computer_constrained_users": computer_constrained_users.get("data", []),
+            "count": computer_constrained_users.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving computer constrained users: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve computer constrained users: {str(e)}"
+        })
+
+@mcp.tool()
+def get_computer_controllables(computer_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the Security Princiapls within the domain that a specific computer has administrative control over in the domain.
+    These are entities that the computer can control and manipulate within the domain.
+    These are potential targets for lateral movement, privilege escalation, and persistence.
+    
+    Args:
+        computer_id: The ID of the computer to query
+        limit: Maximum number of controllables to return (default: 100)
+        skip: Number of controllables to skip for pagination (default: 0)
+    """
+    try:
+        computer_controlables = bloodhound_api.computers.get_controllables(computer_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {computer_controlables.get('count', 0)} controlables for the computer",
+            "computer_controlables": computer_controlables.get("data", []),
+            "count": computer_controlables.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving computer controlables: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve computer controlables: {str(e)}"
+        })
+    
+@mcp.tool()
+def get_computer_controllers(computer_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the controllers of a specific computer in the domain.
+    Controllers are entities that have control over the specified computer
+    This can be used to help identify paths to gain access to a specific computer.
+    Args:
+        computer_id: The ID of the computer to query
+        limit: Maximum number of controllers to return (default: 100)
+        skip: Number of controllers to skip for pagination (default: 0)
+    """
+    try:
+        computer_controllers = bloodhound_api.computers.get_controllers(computer_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {computer_controllers.get('count', 0)} controllers for the computer",
+            "computer_controllers": computer_controllers.get("data", []),
+            "count": computer_controllers.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving computer controllers: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve computer controllers: {str(e)}"
+        })
+    
+@mcp.tool()
+def get_computer_dcom_rights(computer_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the a list of security principals that a specific computer to execute COM on
+    DCOM rights allow a computer to communicate with COM objects on another computer in the network.
+    These rights can be abused for privilege escalation and lateral movement within the domain.
+    """
+    try:
+        computer_dcom_rights = bloodhound_api.computers.get_dcom_rights(computer_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {computer_dcom_rights.get('count', 0)} DCOM rights for the computer",
+            "computer_dcom_rights": computer_dcom_rights.get("data", []),
+            "count": computer_dcom_rights.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving computer DCOM rights: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve computer DCOM rights: {str(e)}"
+        })
+
+@mcp.tool()
+def get_computer_dcom_users(computer_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the users that have DCOM rights to a specific computer in the domain.
+    DCOM rights allow a user to communicate with COM objects on another computer in the network.
+    These rights can be abused for privilege escalation and lateral movement within the domain.
+    
+    Args:
+        computer_id: The ID of the computer to query
+        limit: Maximum number of DCOM rights to return (default: 100)
+        skip: Number of DCOM rights to skip for pagination (default: 0)
+    """
+    try:
+        computer_dcom_users = bloodhound_api.computers.get_dcom_users(computer_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {computer_dcom_users.get('count', 0)} DCOM users for the computer",
+            "computer_dcom_users": computer_dcom_users.get("data", []),
+            "count": computer_dcom_users.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving computer DCOM users: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve computer DCOM users: {str(e)}"
+        })
+    
+@mcp.tool()
+def get_computer_memberships(computer_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the group memberships of a specific computer within the domain.
+    Group memberships are the groups that the specified computer is a member of within the domain.
+    These memberships can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        computer_id: The ID of the computer to query
+        limit: Maximum number of memberships to return (default: 100)
+        skip: Number of memberships to skip for pagination (default: 0)
+    """
+    try:
+        computer_memberships = bloodhound_api.computers.get_memberships(computer_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {computer_memberships.get('count', 0)} memberships for the computer",
+            "computer_memberships": computer_memberships.get("data", []),
+            "count": computer_memberships.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving computer memberships: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve computer memberships: {str(e)}"
+        })
+@mcp.tool()
+def get_computer_ps_remote_rights(computer_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves a list of hosts that this specific computer has the right to PS remote to
+    Remote PowerShell rights allow a computer to execute PowerShell commands on a remote computer.
+    These rights can be abused for lateral movement and privilege escalation within the domain.
+    Args:
+        computer_id: The ID of the computer to query
+        limit: Maximum number of remote PowerShell rights to return (default: 100)
+        skip: Number of remote PowerShell rights to skip for pagination (default: 0)
+    """
+    try:
+        computer_ps_remote_rights = bloodhound_api.computers.get_ps_remote_rights(computer_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {computer_ps_remote_rights.get('count', 0)} remote PowerShell rights for the computer",
+            "computer_ps_remote_rights": computer_ps_remote_rights.get("data", []),
+            "count": computer_ps_remote_rights.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving computer remote PowerShell rights: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve computer remote PowerShell rights: {str(e)}"
+        })
+
+@mcp.tool()
+def get_computer_ps_remote_users(computer_id: str, limit: int = 100, skip: int = 0):
+    """
+    This retieves the users that have PS remote rights to this specific computer in the domain.
+    Remote PowerShell rights allow a user to execute PowerShell commands on a remote computer.
+    These rights can be abused for lateral movement and privilege escalation within the domain.
+    Args:
+        computer_id: The ID of the computer to query
+        limit: Maximum number of remote PowerShell rights to return (default: 100)
+        skip: Number of remote PowerShell rights to skip for pagination (default: 0)
+    """
+    try:
+        computer_ps_remote_users = bloodhound_api.computers.get_ps_remote_users(computer_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {computer_ps_remote_users.get('count', 0)} remote PowerShell users for the computer",
+            "computer_ps_remote_users": computer_ps_remote_users.get("data", []),
+            "count": computer_ps_remote_users.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving computer remote PowerShell users: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve computer remote PowerShell users: {str(e)}"
+        })
+
+@mcp.tool()
+def get_computer_rdp_rights(computer_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves a list of hosts that this specific computer has the right to RDP to
+    RDP rights allow a computer to remotely connect to another computer using the Remote Desktop Protocol.
+    These rights can be abused for lateral movement and privilege escalation within the domain.
+    Args:
+        computer_id: The ID of the computer to query
+        limit: Maximum number of RDP rights to return (default: 100)
+        skip: Number of RDP rights to skip for pagination (default: 0)
+    """
+    try:
+        computer_rdp_rights = bloodhound_api.computers.get_rdp_rights(computer_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {computer_rdp_rights.get('count', 0)} RDP rights for the computer",
+            "computer_rdp_rights": computer_rdp_rights.get("data", []),
+            "count": computer_rdp_rights.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving computer RDP rights: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve computer RDP rights: {str(e)}"
+        })
+
+@mcp.tool()
+def get_computer_rdp_users(computer_id: str, limit: int = 100, skip: int = 0):
+    """
+    This retieves the users that have RDP rights to this specific computer in the domain.
+    RDP rights allow a user to remotely connect to another computer using the Remote Desktop Protocol.
+    These rights can be abused for lateral movement and privilege escalation within the domain.
+    
+    Args:
+        computer_id: The ID of the computer to query
+        limit: Maximum number of RDP rights to return (default: 100)
+        skip: Number of RDP rights to skip for pagination (default: 0)
+    """
+    try:
+        computer_rdp_users = bloodhound_api.computers.get_rdp_users(computer_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {computer_rdp_users.get('count', 0)} RDP users for the computer",
+            "computer_rdp_users": computer_rdp_users.get("data", []),
+            "count": computer_rdp_users.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving computer RDP users: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve computer RDP users: {str(e)}"
+        })
+
+@mcp.tool()
+def get_computer_sessions(computer_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the active sessions of a specific computer within the domain.
+    Active sessions are the current sessions that a computer has within the domain.
+    These sessions can be used to identify potential targets for lateral movement and privilege escalation.
+    These sessions can also be used to formulate and inform on attack paths because if a user has an active session on a host their credentials are cached in memory
+    
+    Args:
+        computer_id: The ID of the computer to query
+        limit: Maximum number of sessions to return (default: 100)
+        skip: Number of sessions to skip for pagination (default: 0)
+    """
+    try:
+        computer_sessions = bloodhound_api.computers.get_sessions(computer_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {computer_sessions.get('count', 0)} sessions for the computer",
+            "computer_sessions": computer_sessions.get("data", []),
+            "count": computer_sessions.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving computer sessions: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve computer sessions: {str(e)}"
+        })
+    
+@mcp.tool()
+def get_computer_sql_admin_rights(computer_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the SQL administrative rights of a specific computer within the domain.
+    SQL administrative rights allow a computer to perform administrative tasks on a SQL Server.
+    These rights can be abused for lateral movement and privilege escalation within the domain.
+    
+    Args:
+        computer_id: The ID of the computer to query
+        limit: Maximum number of SQL administrative rights to return (default: 100)
+        skip: Number of SQL administrative rights to skip for pagination (default: 0)
+    """
+    try:
+        computer_sql_admin_rights = bloodhound_api.computers.get_sql_admin_rights(computer_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {computer_sql_admin_rights.get('count', 0)} SQL administrative rights for the computer",
+            "computer_sql_admin_rights": computer_sql_admin_rights.get("data", []),
+            "count": computer_sql_admin_rights.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving computer SQL administrative rights: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve computer SQL administrative rights: {str(e)}"
+        })
+    
+# mcp tools for the gpos apis
 
 
+# main function to start the server
 async def main():
     """Main function to start the server"""
     # Test connection to Bloodhound API
