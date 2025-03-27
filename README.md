@@ -46,7 +46,7 @@ The bloodhound ce API is massive and I need to first implement all of the api ca
 - [x]  users
 - [x] groups
 - [x] computers
-- [ ] OU's
+- [x] OU's
 - [ ] GPOs
 - [ ] ADCS
 - [ ] Cypher Queries

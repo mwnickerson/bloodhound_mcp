@@ -1374,7 +1374,149 @@ def get_computer_sql_admin_rights(computer_id: str, limit: int = 100, skip: int 
             "error": f"Failed to retrieve computer SQL administrative rights: {str(e)}"
         })
     
-# mcp tools for the gpos apis
+# mcp tools for the OUs apis
+@mcp.tool()
+def get_ou_info(ou_id: str):
+    """
+    Retrieves information about a specific OU in a specific domain.
+    This provides a general overview of an OU's information including their name, domain, and other attributes.
+    It can be used to conduct reconnaissance and start formulating and targeting OUs within the domain
+    Args:
+        ou_id: The ID of the OU to query
+    """
+    try:
+        ou_info = bloodhound_api.ous.get_info(ou_id)
+        return json.dumps({
+            "message": f"OU information for {ou_info.get('name')}",
+            "ou_info": ou_info
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving OU information: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve OU information: {str(e)}"
+        })
+
+@mcp.tool()
+def get_ou_computers(ou_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the computers within a specific OU in the domain.
+    This can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        ou_id: The ID of the OU to query
+        limit: Maximum number of computers to return (default: 100)
+        skip: Number of computers to skip for pagination (default: 0)
+    """
+    try:
+        ou_computers = bloodhound_api.ous.get_computers(ou_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {ou_computers.get('count', 0)} computers for the OU",
+            "ou_computers": ou_computers.get("data", []),
+            "count": ou_computers.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving OU computers: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve OU computers: {str(e)}"
+        })
+
+@mcp.tool()
+def get_ou_groups(ou_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the groups within a specific OU in the domain.
+    This can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        ou_id: The ID of the OU to query
+        limit: Maximum number of groups to return (default: 100)
+        skip: Number of groups to skip for pagination (default: 0)
+    """
+    try:
+        ou_groups = bloodhound_api.ous.get_groups(ou_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {ou_groups.get('count', 0)} groups for the OU",
+            "ou_groups": ou_groups.get("data", []),
+            "count": ou_groups.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving OU groups: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve OU groups: {str(e)}"
+        })
+
+@mcp.tool()
+def get_ou_gpos(ou_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the GPOs within a specific OU in the domain.
+    This can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        ou_id: The ID of the OU to query
+        limit: Maximum number of GPOs to return (default: 100)
+        skip: Number of GPOs to skip for pagination (default: 0)
+    """
+    try:
+        ou_gpos = bloodhound_api.ous.get_gpos(ou_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {ou_gpos.get('count', 0)} GPOs for the OU",
+            "ou_gpos": ou_gpos.get("data", []),
+            "count": ou_gpos.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving OU GPOs: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve OU GPOs: {str(e)}"
+        })
+    
+@mcp.tool()
+def get_ou_groups(ou_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the list of groups contained within the specific Organizational Unit
+    This can be used to identify potential targets for lateral movemner and privilege escalation
+    This can also be used to help identify attack paths
+
+    Args:
+        ou_id: The ID of the OU to query
+        limit: Maximum number of groups to return (default: 100)
+        skip: Number of groups to skip for pagination (default: 0)
+    """
+    try:
+        ou_groups = bloodhound_api.ous.get_groups(ou_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {ou_groups.get('count', 0)} groups for the OU",
+            "ou_groups": ou_groups.get("data", []),
+            "count": ou_groups.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving OU groups: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve OU groups: {str(e)}"
+        })
+    
+@mcp.tool()
+def get_ou_users(ou_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the users within a specific OU in the domain.
+    This can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        ou_id: The ID of the OU to query
+        limit: Maximum number of users to return (default: 100)
+        skip: Number of users to skip for pagination (default: 0)
+    """
+    try:
+        ou_users = bloodhound_api.ous.get_users(ou_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {ou_users.get('count', 0)} users for the OU",
+            "ou_users": ou_users.get("data", []),
+            "count": ou_users.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving OU users: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve OU users: {str(e)}"
+        })
+
 
 
 # main function to start the server
