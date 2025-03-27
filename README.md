@@ -22,27 +22,55 @@ Start the conversation by asking about the domains
 
 
 ## Notes
-This is in its early stages and I have learned a lot about MCPs and how cool they are. I would like to continue working on this, however the current implementation is very very basic. 
+This is in its early stages and I have learned a lot about MCPs and how cool they are. I would like to continue working on this, however the current implementation is very very basic.
+
+UPDATE: I added fullish support for users in the domain, basically just look at the Bloodhound API documentation and it can answer any questions in the /domains and the /users api endpoints.
 
 The bloodhound ce API is massive and I need to first implement all of the api calls into the [bloodhound_api.py](./lib/bloodhound_api.py). Then functionality to make the MCP use them needs to be added. 
 
 *What it supports*
 - questions about the general domain
-    - Users
-    - Groups
-    - OUs
-    - Controllers
-    - GPOs
-    - Computers
+- Questions about specific users
+- Questions about Groups
+- Questions about Computers
 
 *What it does not support*
-- Everything else
+- OU's
+- GPOs
+- Attack Paths
+- Cypher Queries
+- ADCS 
+- Azure
+
+## To do
+- [x]  users
+- [x] groups
+- [x] computers
+- [ ] OU's
+- [ ] GPOs
+- [ ] ADCS
+- [ ] Cypher Queries
+- [ ] attack paths
+- [ ] Azure
+- [x] Refactor apis into classes to make code a little bit more presentable
+- [ ] Refine the prompt engineering for the MCP Tools to improve the LLMs capability
+- [ ] figure out ways to support other LLMs (ollama, OpenAI, etc)
+
+
+
+# limitations
+would like a much bigger and better bloodhound dump to run this on.
 
 
 ## Disclaimer
 Since this a POC, i used data from Game Of Active Directory (shoutout to https://github.com/Orange-Cyberdefense/GOAD).
 
 This is using Claude Desktop and therefore whatever data is being used is being sent to Anthropic, i highly recommend not using this on production Bloodhound dumps in its current state. There may be a way to get this to work with a Local LLM, however i am GPU poor and cannot run models on my local hosts.
+
+## Credits
+Orange Cyberdefense for making goad so i can test this
+@xpn for his mythic mcp that made me realize there was a better alternative than fastapi
+
 
 
 
