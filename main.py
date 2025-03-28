@@ -94,6 +94,22 @@ def bloodhound_assistant() -> str:
     - RDP rights (both the rights the computer has over other machines and the rights other security principals have over the computer)
     - Sessions
     - SQL administrative rights
+    You also have the capability into the organizational units within the domain. By analyzing organizational units you can identify the structure of the domain and how it can be exploited.
+    By combining all of the below information you can provie on a organizational unit you can provide an in dpeth analysis of a organizational unit.
+    Information on the organizational units includes:
+    - Organizational unit's general information
+    - computers within the organizational unit
+    - groups within the organizational unit
+    - users within the organizational unit
+    Another caoability you have is to look into the group policy objects within the domain. By analyzing group policy objects you can identify the structure of the domain and how it can be exploited.
+    By combining all of the below information you can provie on a group policy object you can provide an in dpeth analysis of a group policy object.
+    Information on the group policy objects includes:
+    - Group policy object's general information
+    - Computers that the Group Policy is applied to 
+    - Security Principals that have control over the Group Policy
+    - Organizational Units that the Group Policy is applied to
+    - The tier-zero principals associated with the GPO
+    - The users that the GPOs are applied to
     
     To get information, use the available tools to query the Bloodhound database."""
 
@@ -1374,7 +1390,293 @@ def get_computer_sql_admin_rights(computer_id: str, limit: int = 100, skip: int 
             "error": f"Failed to retrieve computer SQL administrative rights: {str(e)}"
         })
     
-# mcp tools for the gpos apis
+# mcp tools for the OUs apis
+@mcp.tool()
+def get_ou_info(ou_id: str):
+    """
+    Retrieves information about a specific OU in a specific domain.
+    This provides a general overview of an OU's information including their name, domain, and other attributes.
+    It can be used to conduct reconnaissance and start formulating and targeting OUs within the domain
+    Args:
+        ou_id: The ID of the OU to query
+    """
+    try:
+        ou_info = bloodhound_api.ous.get_info(ou_id)
+        return json.dumps({
+            "message": f"OU information for {ou_info.get('name')}",
+            "ou_info": ou_info
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving OU information: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve OU information: {str(e)}"
+        })
+
+@mcp.tool()
+def get_ou_computers(ou_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the computers within a specific OU in the domain.
+    This can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        ou_id: The ID of the OU to query
+        limit: Maximum number of computers to return (default: 100)
+        skip: Number of computers to skip for pagination (default: 0)
+    """
+    try:
+        ou_computers = bloodhound_api.ous.get_computers(ou_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {ou_computers.get('count', 0)} computers for the OU",
+            "ou_computers": ou_computers.get("data", []),
+            "count": ou_computers.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving OU computers: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve OU computers: {str(e)}"
+        })
+
+@mcp.tool()
+def get_ou_groups(ou_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the groups within a specific OU in the domain.
+    This can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        ou_id: The ID of the OU to query
+        limit: Maximum number of groups to return (default: 100)
+        skip: Number of groups to skip for pagination (default: 0)
+    """
+    try:
+        ou_groups = bloodhound_api.ous.get_groups(ou_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {ou_groups.get('count', 0)} groups for the OU",
+            "ou_groups": ou_groups.get("data", []),
+            "count": ou_groups.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving OU groups: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve OU groups: {str(e)}"
+        })
+
+@mcp.tool()
+def get_ou_gpos(ou_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the GPOs within a specific OU in the domain.
+    This can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        ou_id: The ID of the OU to query
+        limit: Maximum number of GPOs to return (default: 100)
+        skip: Number of GPOs to skip for pagination (default: 0)
+    """
+    try:
+        ou_gpos = bloodhound_api.ous.get_gpos(ou_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {ou_gpos.get('count', 0)} GPOs for the OU",
+            "ou_gpos": ou_gpos.get("data", []),
+            "count": ou_gpos.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving OU GPOs: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve OU GPOs: {str(e)}"
+        })
+    
+@mcp.tool()
+def get_ou_groups(ou_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the list of groups contained within the specific Organizational Unit
+    This can be used to identify potential targets for lateral movemner and privilege escalation
+    This can also be used to help identify attack paths
+
+    Args:
+        ou_id: The ID of the OU to query
+        limit: Maximum number of groups to return (default: 100)
+        skip: Number of groups to skip for pagination (default: 0)
+    """
+    try:
+        ou_groups = bloodhound_api.ous.get_groups(ou_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {ou_groups.get('count', 0)} groups for the OU",
+            "ou_groups": ou_groups.get("data", []),
+            "count": ou_groups.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving OU groups: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve OU groups: {str(e)}"
+        })
+    
+@mcp.tool()
+def get_ou_users(ou_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the users within a specific OU in the domain.
+    This can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        ou_id: The ID of the OU to query
+        limit: Maximum number of users to return (default: 100)
+        skip: Number of users to skip for pagination (default: 0)
+    """
+    try:
+        ou_users = bloodhound_api.ous.get_users(ou_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {ou_users.get('count', 0)} users for the OU",
+            "ou_users": ou_users.get("data", []),
+            "count": ou_users.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving OU users: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve OU users: {str(e)}"
+        })
+
+#GPO tools
+@mcp.tool()
+def get_gpo_info(gpo_id: str):
+    """
+    Retrieves information about a specific GPO in a specific domain.
+    This provides a general overview of a GPO's information including their name, domain, and other attributes.
+    It can be used to conduct reconnaissance and start formulating and targeting GPOs within the domain
+    Args:
+        gpo_id: The ID of the GPO to query
+    """
+    try:
+        gpo_info = bloodhound_api.gpos.get_info(gpo_id)
+        return json.dumps({
+            "message": f"GPO information for {gpo_info.get('name')}",
+            "gpo_info": gpo_info
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving GPO information: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve GPO information: {str(e)}"
+        })
+
+@mcp.tool()
+def get_gpo_computers(gpo_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the computers within a specific GPO in the domain.
+    This can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        gpo_id: The ID of the GPO to query
+        limit: Maximum number of computers to return (default: 100)
+        skip: Number of computers to skip for pagination (default: 0)
+    """
+    try:
+        gpo_computers = bloodhound_api.gpos.get_computers(gpo_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {gpo_computers.get('count', 0)} computers for the GPO",
+            "gpo_computers": gpo_computers.get("data", []),
+            "count": gpo_computers.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving GPO computers: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve GPO computers: {str(e)}"
+        })
+    
+@mcp.tool()
+def get_gpo_controllers(gpo_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the controllers of a specific GPO in the domain.
+    Controllers are entities that have control over the specified GPO
+    This can be used to help identify paths to gain access to a specific GPO.
+    
+    Args:
+        gpo_id: The ID of the GPO to query
+        limit: Maximum number of controllers to return (default: 100)
+        skip: Number of controllers to skip for pagination (default: 0)
+    """
+    try:
+        gpo_controllers = bloodhound_api.gpos.get_controllers(gpo_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {gpo_controllers.get('count', 0)} controllers for the GPO",
+            "gpo_controllers": gpo_controllers.get("data", []),
+            "count": gpo_controllers.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving GPO controllers: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve GPO controllers: {str(e)}"
+        })
+    
+@mcp.tool()
+def get_gpo_ous(gpo_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the OUs that are linked to a specific GPO in the domain.
+    This can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        gpo_id: The ID of the GPO to query
+        limit: Maximum number of OUs to return (default: 100)
+        skip: Number of OUs to skip for pagination (default: 0)
+    """
+    try:
+        gpo_ous = bloodhound_api.gpos.get_ous(gpo_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {gpo_ous.get('count', 0)} OUs for the GPO",
+            "gpo_ous": gpo_ous.get("data", []),
+            "count": gpo_ous.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving GPO OUs: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve GPO OUs: {str(e)}"
+        })
+
+@mcp.tool()
+def get_gpo_tier_zeros(gpo_id: str, limit: 100, skip: int = 0):
+    """
+    Retrieves the Tier 0 groups that are linked to a specific GPO in the domain.
+    Tier 0 groups are the highest privileged groups in the domain and have access to all resources.
+    This can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        gpo_id: The ID of the GPO to query
+        limit: Maximum number of Tier 0 groups to return (default: 100)
+        skip: Number of Tier 0 groups to skip for pagination (default: 0)
+    """
+    try:
+        gpo_tier_zeros = bloodhound_api.gpos.get_tier_zeros(gpo_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {gpo_tier_zeros.get('count', 0)} Tier 0 groups for the GPO",
+            "gpo_tier_zeros": gpo_tier_zeros.get("data", []),
+            "count": gpo_tier_zeros.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving GPO Tier 0 groups: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve GPO Tier 0 groups: {str(e)}"
+        })
+
+@mcp.tool()
+def get_gpo_users(gpo_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the users within a specific GPO in the domain.
+    This can be used to identify potential targets for lateral movement and privilege escalation.
+    
+    Args:
+        gpo_id: The ID of the GPO to query
+        limit: Maximum number of users to return (default: 100)
+        skip: Number of users to skip for pagination (default: 0)
+    """
+    try:
+        gpo_users = bloodhound_api.gpos.get_users(gpo_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {gpo_users.get('count', 0)} users for the GPO",
+            "gpo_users": gpo_users.get("data", []),
+            "count": gpo_users.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving GPO users: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve GPO users: {str(e)}"
+        })
+    
 
 
 # main function to start the server

@@ -33,10 +33,10 @@ The bloodhound ce API is massive and I need to first implement all of the api ca
 - Questions about specific users
 - Questions about Groups
 - Questions about Computers
+- Questions about Organizational Units
+- Questions about Group Policy Objects
 
 *What it does not support*
-- OU's
-- GPOs
 - Attack Paths
 - Cypher Queries
 - ADCS 
@@ -46,8 +46,8 @@ The bloodhound ce API is massive and I need to first implement all of the api ca
 - [x]  users
 - [x] groups
 - [x] computers
-- [ ] OU's
-- [ ] GPOs
+- [x] OU's
+- [x] GPOs
 - [ ] ADCS
 - [ ] Cypher Queries
 - [ ] attack paths
@@ -60,6 +60,7 @@ The bloodhound ce API is massive and I need to first implement all of the api ca
 
 # limitations
 would like a much bigger and better bloodhound dump to run this on.
+I am lacking any azure dumps, adcs dumps, basiclaly just running off the north.sevenkingdoms.local domain in GOAD :/
 
 
 ## Disclaimer
