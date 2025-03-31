@@ -11,6 +11,7 @@ https://youtu.be/eZBT0Iw9CMA
 3. Claude Desktop
 4. A Bloodhoud CE instance running somewhere accessible (I ran it in my homelab)
 5. Bloodhound dump files loaded into bloodhound (I used an initial dump from GOAD)
+6. Bloodhound Key and ID for the authentication token
 
 ## Usage with Claude Desktop
 Using the Developer Tools in Settings add the config in [claude.json](./claude.json)
