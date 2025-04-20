@@ -36,6 +36,14 @@ bloodhound_api = BloodhoundAPI()
 def bloodhound_assistant() -> str:
     return """You are an AI assistant that helps security professionals analyze Active Directory environments using Bloodhound data.
     You can provide and anlyze information an organization's active directory environment. 
+    You have the capability to search for an object by name or Object ID, you need to specify the object type you are searching for.
+    You can search for the following object types:
+    - For Active Directory: User, Computer, Group, GPO, OU, Domain
+    - For Azure: AZUser, AZGroup, AZDevice, etc.
+    It is recommended to perform a search when asked about a user first before trying to brute force or guess the user's username or Object ID.
+    
+    You can also retrieve information on the domains within the Bloodhound database.
+    You can analyze the domains within the Bloodhound database.
     Specifics on what information you can provide on and analyse for a domain include:
     - Users
     - Groups
@@ -80,6 +88,7 @@ def bloodhound_assistant() -> str:
     - RDP rights
     - Sessions
     - SQL administrative rights
+
     You can also look into the computers within the domain. You can analyze the computer memberships and how they can be exploited.
     By combining all of the below information you can provie on a computer you can provide an in dpeth analysis of a computer.
     Information on the computers includes:
@@ -94,6 +103,7 @@ def bloodhound_assistant() -> str:
     - RDP rights (both the rights the computer has over other machines and the rights other security principals have over the computer)
     - Sessions
     - SQL administrative rights
+
     You also have the capability into the organizational units within the domain. By analyzing organizational units you can identify the structure of the domain and how it can be exploited.
     By combining all of the below information you can provie on a organizational unit you can provide an in dpeth analysis of a organizational unit.
     Information on the organizational units includes:
@@ -101,7 +111,12 @@ def bloodhound_assistant() -> str:
     - computers within the organizational unit
     - groups within the organizational unit
     - users within the organizational unit
-    Another caoability you have is to look into the group policy objects within the domain. By analyzing group policy objects you can identify the structure of the domain and how it can be exploited.
+    - security principals that have control over the organizational unit
+    - the tier-zero principals associated with the OU
+    - the users that the OU is applied to
+
+
+    Another capability you have is to look into the group policy objects within the domain. By analyzing group policy objects you can identify the structure of the domain and how it can be exploited.
     By combining all of the below information you can provie on a group policy object you can provide an in dpeth analysis of a group policy object.
     Information on the group policy objects includes:
     - Group policy object's general information
@@ -110,11 +125,29 @@ def bloodhound_assistant() -> str:
     - Organizational Units that the Group Policy is applied to
     - The tier-zero principals associated with the GPO
     - The users that the GPOs are applied to
+
+    To assist further both in defensive and offensive secruity purposes you have the capability to perform graph searches within the Bloodhound database.
+    You can search for specific objects using graph with fuzzy searching. 
+    You can also search for the shortest path between two objects in the BloodHound database
+
+        You can also analyze certificate templates and certificate authorities within the domain. 
+    These components play a critical role in the enterprise PKI infrastructure and can be abused 
+    for privilege escalation if misconfigured.
     
-    To get information, use the available tools to query the Bloodhound database."""
+    You can provide information on:
+    - Certificate Templates - These define the properties of certificates that can be issued
+    - Root Certificate Authorities (CAs) - The trusted root certificates in the domain
+    - Enterprise Certificate Authorities - CAs that issue certificates within the organization
+    - AIA Certificate Authorities - CAs that provide Authority Information Access
+    
+    For each of these entities, you can analyze who controls them, which is critical for 
+    identifying potential ADCS-based attack vectors like ESC1 (Misconfigured Certificate Templates),
+    ESC2 (Vulnerable Certificate Template Access Control), and other ADCS attacks.
+    
+    To get information, use the available tools to query the Bloodhound database.
+    """
 
-# Define tools for the MCP
-
+# Define tools for the MCP server
 # mcp tools for the /domains apis
 @mcp.tool()
 def get_domains():
@@ -129,7 +162,34 @@ def get_domains():
         return json.dumps({
             "error": f"Failed to retrieve domains: {str(e)}"
         })
+
+@mcp.tool()
+def search_objects(query: str, object_type: str = None, limit: int = 100, skip: int = 0):
+    """
+    Search for objects in the BloodHound database by name or Object ID.
+    This is useful for finding specific objects when you don't know their exact ID.
     
+    Args:
+        query: Search text - can be a partial name, full name, or Object ID
+        object_type: Optional filter by object type:
+            - For Active Directory: User, Computer, Group, GPO, OU, Domain
+            - For Azure: AZUser, AZGroup, AZDevice, etc.
+        limit: Maximum number of results to return (default: 100)
+        skip: Number of results to skip for pagination (default: 0)
+    """
+    try:
+        results = bloodhound_api.domains.search_objects(query, object_type, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {results.get('count', 0)} results matching '{query}'",
+            "results": results.get("data", []),
+            "count": results.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error searching for objects: {e}")
+        return json.dumps({
+            "error": f"Failed to search for objects: {str(e)}"
+        })    
+
 @mcp.tool()
 def get_users(domain_id: str, limit: int = 100, skip: int = 0):
     """
@@ -1676,7 +1736,277 @@ def get_gpo_users(gpo_id: str, limit: int = 100, skip: int = 0):
         return json.dumps({
             "error": f"Failed to retrieve GPO users: {str(e)}"
         })
+
+# MCP tools for the /graph apis except for cypher queries to be implemented later
+@mcp.tool()
+def search_graph(query: str, search_type: str = "fuzzy"):
+    """
+    Search for nodes in the Bloodhound graph by name.
+    This function lets you find specific nodes in the graph based on a search query.
+    Results are typically returned as matches on node names.
     
+    Args:
+        query: Search text to find nodes by name
+        search_type: Type of search to perform - "fuzzy" (default) for approximate matches, "exact" for exact matches
+    """
+    try:
+        results = bloodhound_api.graph.search(query, search_type)
+        return json.dumps({
+            "message": f"Search results for '{query}'",
+            "results": results.get("data", []),
+        })
+    except Exception as e:
+        logger.error(f"Error searching graph: {e}")
+        return json.dumps({
+            "error": f"Failed to search graph: {str(e)}"
+        })
+
+@mcp.tool()
+def get_shortest_path(start_node: str, end_node: str, relationship_kinds: str = None):
+    """
+    Find the shortest path between two nodes in the Bloodhound graph.
+    This is useful for attack path analysis, showing the most direct route between two security principals.
+    The path will show all the intermediary nodes and the types of relationships connecting them.
+    If this returns a 500 or 404 error it is likely that the path does not exist within bloodhound
+    
+    Args:
+        start_node: Object ID of the starting node (source)
+        end_node: Object ID of the ending node (target)
+        relationship_kinds: Optional comma-separated list of relationship types to include in the path
+    """
+    try:
+        path = bloodhound_api.graph.get_shortest_path(start_node, end_node, relationship_kinds)
+        return json.dumps({
+            "message": f"Shortest path from {start_node} to {end_node}",
+            "path": path.get("data", {}),
+        })
+    except Exception as e:
+        logger.error(f"Error getting shortest path: {e}")
+        return json.dumps({
+            "error": f"Failed to get shortest path: {str(e)}"
+        })
+
+@mcp.tool()
+def get_edge_composition(source_node: int, target_node: int, edge_type: str):
+    """
+    Analyze the components of a complex edge between two nodes.
+    In Bloodhound, many high-level edges (like "HasPath" or "AdminTo") are composed of multiple
+    individual relationships. This function reveals those underlying components.
+    This is useful for understanding exactly how security principals are connected.
+    
+    Args:
+        source_node: ID of the source node
+        target_node: ID of the target node
+        edge_type: Type of edge to analyze (e.g., "MemberOf", "AdminTo", "CanRDP")
+    """
+    try:
+        composition = bloodhound_api.graph.get_edge_composition(source_node, target_node, edge_type)
+        return json.dumps({
+            "message": f"Edge composition for {edge_type} edge from {source_node} to {target_node}",
+            "composition": composition.get("data", {}),
+        })
+    except Exception as e:
+        logger.error(f"Error getting edge composition: {e}")
+        return json.dumps({
+            "error": f"Failed to get edge composition: {str(e)}"
+        })
+
+@mcp.tool()
+def get_relay_targets(source_node: int, target_node: int, edge_type: str):
+    """
+    Find valid relay targets for a given edge in the Bloodhound graph.
+    Relay targets represent potential nodes that could be used to relay an attack or
+    privilege escalation between two nodes. This is critical for advanced attack path planning.
+    
+    Args:
+        source_node: ID of the source node
+        target_node: ID of the target node
+        edge_type: Type of edge (relationship) between the nodes
+    """
+    try:
+        targets = bloodhound_api.graph.get_relay_targets(source_node, target_node, edge_type)
+        return json.dumps({
+            "message": f"Relay targets for {edge_type} edge from {source_node} to {target_node}",
+            "targets": targets.get("data", {}),
+        })
+    except Exception as e:
+        logger.error(f"Error getting relay targets: {e}")
+        return json.dumps({
+            "error": f"Failed to get relay targets: {str(e)}"
+        })
+
+# MCP Tools for Active Directory Certificate Services (AD CS) APIs
+@mcp.tool()
+def get_cert_template_info(template_id: str):
+    """
+    Retrieves information about a specific Certificate Template.
+    Certificate Templates define the properties and security settings for certificates that can be issued.
+    They can be abused for privilege escalation if misconfigured.
+    
+    Args:
+        template_id: The ID of the Certificate Template to query
+    """
+    try:
+        cert_template_info = bloodhound_api.adcs.get_cert_template_info(template_id)
+        return json.dumps({
+            "message": f"Certificate Template information for {cert_template_info.get('name', template_id)}",
+            "cert_template_info": cert_template_info
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving Certificate Template information: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve Certificate Template information: {str(e)}"
+        })
+
+@mcp.tool()
+def get_cert_template_controllers(template_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the controllers of a specific Certificate Template.
+    Controllers are security principals that can modify the Certificate Template or its properties.
+    This is critical for identifying ESC2 vulnerabilities (vulnerable Certificate Template access control).
+    
+    Args:
+        template_id: The ID of the Certificate Template to query
+        limit: Maximum number of controllers to return (default: 100)
+        skip: Number of controllers to skip for pagination (default: 0)
+    """
+    try:
+        cert_template_controllers = bloodhound_api.adcs.get_cert_template_controllers(template_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {cert_template_controllers.get('count', 0)} controllers for the Certificate Template",
+            "cert_template_controllers": cert_template_controllers.get("data", []),
+            "count": cert_template_controllers.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving Certificate Template controllers: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve Certificate Template controllers: {str(e)}"
+        })
+
+# MCP tools for Root CAs
+@mcp.tool()
+def get_root_ca_info(ca_id: str):
+    """
+    Retrieves information about a specific Root Certificate Authority.
+    Root CAs are the foundation of trust in a PKI infrastructure.
+    Controlling a Root CA allows an attacker to issue trusted certificates.
+    
+    Args:
+        ca_id: The ID of the Root CA to query
+    """
+    try:
+        root_ca_info = bloodhound_api.adcs.get_root_ca_info(ca_id)
+        return json.dumps({
+            "message": f"Root CA information for {root_ca_info.get('name', ca_id)}",
+            "root_ca_info": root_ca_info
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving Root CA information: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve Root CA information: {str(e)}"
+        })
+
+@mcp.tool()
+def get_root_ca_controllers(ca_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the controllers of a specific Root Certificate Authority.
+    Controllers of a Root CA can compromise the entire PKI infrastructure.
+    This is critical for identifying ESC4 and ESC5 attack paths.
+    
+    Args:
+        ca_id: The ID of the Root CA to query
+        limit: Maximum number of controllers to return (default: 100)
+        skip: Number of controllers to skip for pagination (default: 0)
+    """
+    try:
+        root_ca_controllers = bloodhound_api.adcs.get_root_ca_controllers(ca_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {root_ca_controllers.get('count', 0)} controllers for the Root CA",
+            "root_ca_controllers": root_ca_controllers.get("data", []),
+            "count": root_ca_controllers.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving Root CA controllers: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve Root CA controllers: {str(e)}"
+        })
+
+# MCP tools for Enterprise CAs
+@mcp.tool()
+def get_enterprise_ca_info(ca_id: str):
+    """
+    Retrieves information about a specific Enterprise Certificate Authority.
+    Enterprise CAs issue certificates within the organization based on Certificate Templates.
+    They are critical components in the Active Directory PKI infrastructure.
+    
+    Args:
+        ca_id: The ID of the Enterprise CA to query
+    """
+    try:
+        enterprise_ca_info = bloodhound_api.adcs.get_enterprise_ca_info(ca_id)
+        return json.dumps({
+            "message": f"Enterprise CA information for {enterprise_ca_info.get('name', ca_id)}",
+            "enterprise_ca_info": enterprise_ca_info
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving Enterprise CA information: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve Enterprise CA information: {str(e)}"
+        })
+
+@mcp.tool()
+def get_enterprise_ca_controllers(ca_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the controllers of a specific Enterprise Certificate Authority.
+    Controllers of an Enterprise CA can issue arbitrary certificates and potentially compromise the domain.
+    This is critical for identifying ESC3 and ESC6 attack paths.
+    
+    Args:
+        ca_id: The ID of the Enterprise CA to query
+        limit: Maximum number of controllers to return (default: 100)
+        skip: Number of controllers to skip for pagination (default: 0)
+    """
+    try:
+        enterprise_ca_controllers = bloodhound_api.adcs.get_enterprise_ca_controllers(ca_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {enterprise_ca_controllers.get('count', 0)} controllers for the Enterprise CA",
+            "enterprise_ca_controllers": enterprise_ca_controllers.get("data", []),
+            "count": enterprise_ca_controllers.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving Enterprise CA controllers: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve Enterprise CA controllers: {str(e)}"
+        })
+
+# MCP tools for AIA CAs
+@mcp.tool()
+def get_aia_ca_controllers(ca_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the controllers of a specific AIA Certificate Authority.
+    AIA (Authority Information Access) CAs provide additional trust information.
+    Controllers of an AIA CA may be able to perform certificate-based attacks.
+    
+    Args:
+        ca_id: The ID of the AIA CA to query
+        limit: Maximum number of controllers to return (default: 100)
+        skip: Number of controllers to skip for pagination (default: 0)
+    """
+    try:
+        aia_ca_controllers = bloodhound_api.adcs.get_aia_ca_controllers(ca_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {aia_ca_controllers.get('count', 0)} controllers for the AIA CA",
+            "aia_ca_controllers": aia_ca_controllers.get("data", []),
+            "count": aia_ca_controllers.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving AIA CA controllers: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve AIA CA controllers: {str(e)}"
+        })
+
+# MCP tools for getting the AI to leverage Cypher Queries 
+
 
 
 # main function to start the server

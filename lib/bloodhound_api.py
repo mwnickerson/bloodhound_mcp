@@ -196,6 +196,9 @@ class BloodhoundAPI:
         self.computers = ComputerClient(self.base_client)
         self.ous = OUsClient(self.base_client)
         self.gpos = GPOsClient(self.base_client)
+        self.graph = GraphClient(self.base_client)
+        self.adcs = ADCSClient(self.base_client)
+        #self.cypher = CypherClient(self.base_client)
 
     
     def test_connection(self) -> Dict[str, Any]:
@@ -240,6 +243,37 @@ class DomainClient:
         """
         response = self.base_client.request("GET", "/api/v2/available-domains")
         return response["data"]
+    
+    def search_objects(self, query: str, type: str = None, limit: int = 100, skip: int = 0) -> Dict[str, Any]:
+        """
+        Search for objects by name, Object ID. They can also be filtered by type.
+        Args:
+            query: search parameter for the name or object ID of the node (required)
+            type: type of object to search for (optional)
+                - For AD: Base, User, Computer, Group, Container, GPO, OU, Cert template, Trust
+                - For Azure: AZBase, AZbase, AZDevice
+            skip: Number of results to skip for pagination (default: 0) (optional)
+            limit: Maximum number of results to return (default: 100) (optional)
+        
+            Returns:
+                Dictionary with information on the object found. The information includes:
+                - objectid: Object ID
+                - type: the type of the object
+                - name: Name of the object
+                - distinguishedname : Distinguished Name of the object
+                - system_tags: System tags associated with the object
+        """
+        params = {
+            "q": query,  # Changed from "query" to "q" to match the API
+            "limit": limit,
+            "skip": skip
+        }
+        
+        # Only add the type parameter if it's provided
+        if type:
+            params["type"] = type
+            
+        return self.base_client.request("GET", "/api/v2/search", params=params)
     
     def get_users(self, domain_id: str, limit: int = 100, skip: int = 0) -> Dict[str, Any]:
         """
@@ -1405,4 +1439,215 @@ class GPOsClient:
             "type": "list"
         }
         return self.base_client.request("GET", f"/api/v2/gpos/{gpo_id}/users", params=params)
+
+class GraphClient:
+    """Client for Graph related Bloodhound API Endpoints"""
+
+    def __init__(self, base_client: BloodhoundBaseClient):
+        self.base_client = base_client
+
+    # I am getting a 401 error when searching for some objects and it works on others
+    # for example if i search for Domain Admins it fails with a 401 error but if i search for TargetUserB it works fine
+    def search(self, query: str, search_type: str = "fuzzy") -> Dict[str, Any]:
+        """
+        Search for nodes in the graph by name
+        
+        Args:
+            query: Search query text
+            search_type: Type of search strategy ('fuzzy' or 'exact')
+            
+        Returns:
+            Search results
+        """
+        params = {
+            "query": query,
+            "type": search_type
+        }
+        return self.base_client.request("GET", "/api/v2/graph-search", params=params)
     
+    def get_shortest_path(self, start_node: str, end_node: str, 
+                           relationship_kinds: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Get the shortest path between two nodes in the graph
+        
+        Args:
+            start_node: The object ID of the starting node
+            end_node: The object ID of the ending node
+            relationship_kinds: Optional filter for relationship types
+            
+        Returns:
+            Graph data of the shortest path
+        """
+        params = {
+            "start_node": start_node,
+            "end_node": end_node
+        }
+        
+        if relationship_kinds:
+            params["relationshipkinds"] = relationship_kinds
+            
+        return self.base_client.request("GET", "/api/v2/graphs/shortest-path", params=params)
+    
+    def get_edge_composition(self, source_node: int, target_node: int, 
+                             edge_type: str) -> Dict[str, Any]:
+        """
+        Get the composition of a complex edge between two nodes
+        
+        Args:
+            source_node: ID of the source node
+            target_node: ID of the target node
+            edge_type: Type of edge to analyze
+            
+        Returns:
+            Graph data showing the composition of the edge
+        """
+        params = {
+            "sourcenode": source_node,
+            "targetnode": target_node,
+            "edgetype": edge_type
+        }
+        
+        return self.base_client.request("GET", "/api/v2/graphs/edge-composition", params=params)
+    
+    def get_relay_targets(self, source_node: int, target_node: int, 
+                          edge_type: str) -> Dict[str, Any]:
+        """
+        Get nodes that are valid relay targets for a given edge
+        
+        Args:
+            source_node: ID of the source node
+            target_node: ID of the target node
+            edge_type: Type of edge
+            
+        Returns:
+            Graph data with valid relay targets
+        """
+        params = {
+            "sourcenode": source_node,
+            "targetnode": target_node,
+            "edgetype": edge_type
+        }
+        
+        return self.base_client.request("GET", "/api/v2/graphs/relay-targets", params=params)
+    
+class ADCSClient:
+    """Client for ADCS-related Bloodhound API endpoints"""
+    
+    def __init__(self, base_client: BloodhoundBaseClient):
+        self.base_client = base_client
+    
+    # Certificate Templates methods
+    def get_cert_template_info(self, template_id: str) -> Dict[str, Any]:
+        """
+        Get information about a specific Certificate Template
+        
+        Args:
+            template_id: The ID of the Certificate Template to query
+            
+        Returns:
+            Certificate Template information dictionary
+        """
+        return self.base_client.request("GET", f"/api/v2/certtemplates/{template_id}")
+    
+    def get_cert_template_controllers(self, template_id: str, limit: int = 100, skip: int = 0) -> Dict[str, Any]:
+        """
+        Get controllers of a specific Certificate Template
+        
+        Args:
+            template_id: The ID of the Certificate Template to query
+            limit: Maximum number of controllers to return
+            skip: Number of controllers to skip for pagination
+            
+        Returns:
+            Dictionary with data (list of controllers) and count (total number)
+        """
+        params = {
+            "limit": limit,
+            "skip": skip,
+            "type": "list"
+        }
+        return self.base_client.request("GET", f"/api/v2/certtemplates/{template_id}/controllers", params=params)
+    
+    # Root Certificate Authorities methods
+    def get_root_ca_info(self, ca_id: str) -> Dict[str, Any]:
+        """
+        Get information about a specific Root Certificate Authority
+        
+        Args:
+            ca_id: The ID of the Root CA to query
+            
+        Returns:
+            Root CA information dictionary
+        """
+        return self.base_client.request("GET", f"/api/v2/rootcas/{ca_id}")
+    
+    def get_root_ca_controllers(self, ca_id: str, limit: int = 100, skip: int = 0) -> Dict[str, Any]:
+        """
+        Get controllers of a specific Root Certificate Authority
+        
+        Args:
+            ca_id: The ID of the Root CA to query
+            limit: Maximum number of controllers to return
+            skip: Number of controllers to skip for pagination
+            
+        Returns:
+            Dictionary with data (list of controllers) and count (total number)
+        """
+        params = {
+            "limit": limit,
+            "skip": skip,
+            "type": "list"
+        }
+        return self.base_client.request("GET", f"/api/v2/rootcas/{ca_id}/controllers", params=params)
+    
+    # Enterprise Certificate Authorities methods
+    def get_enterprise_ca_info(self, ca_id: str) -> Dict[str, Any]:
+        """
+        Get information about a specific Enterprise Certificate Authority
+        
+        Args:
+            ca_id: The ID of the Enterprise CA to query
+            
+        Returns:
+            Enterprise CA information dictionary
+        """
+        return self.base_client.request("GET", f"/api/v2/enterprisecas/{ca_id}")
+    
+    def get_enterprise_ca_controllers(self, ca_id: str, limit: int = 100, skip: int = 0) -> Dict[str, Any]:
+        """
+        Get controllers of a specific Enterprise Certificate Authority
+        
+        Args:
+            ca_id: The ID of the Enterprise CA to query
+            limit: Maximum number of controllers to return
+            skip: Number of controllers to skip for pagination
+            
+        Returns:
+            Dictionary with data (list of controllers) and count (total number)
+        """
+        params = {
+            "limit": limit,
+            "skip": skip,
+            "type": "list"
+        }
+        return self.base_client.request("GET", f"/api/v2/enterprisecas/{ca_id}/controllers", params=params)
+    
+    # AIA Certificate Authorities methods
+    def get_aia_ca_controllers(self, ca_id: str, limit: int = 100, skip: int = 0) -> Dict[str, Any]:
+        """
+        Get controllers of a specific AIA Certificate Authority
+        
+        Args:
+            ca_id: The ID of the AIA CA to query
+            limit: Maximum number of controllers to return
+            skip: Number of controllers to skip for pagination
+            
+        Returns:
+            Dictionary with data (list of controllers) and count (total number)
+        """
+        params = {
+            "limit": limit,
+            "skip": skip,
+            "type": "list"
+        }
+        return self.base_client.request("GET", f"/api/v2/aia-cas/{ca_id}/controllers", params=params)

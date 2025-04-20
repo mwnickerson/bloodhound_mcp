@@ -14,7 +14,8 @@ env/
 
 # my specific files
 my-claude.json
-
+unimplemented.txt
+bloodhound-swagger.json
 # mac files
 .DS_Store
 .AppleDouble

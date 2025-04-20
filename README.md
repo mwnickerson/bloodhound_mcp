@@ -49,10 +49,11 @@ The bloodhound ce API is massive and I need to first implement all of the api ca
 - [x] computers
 - [x] OU's
 - [x] GPOs
-- [ ] ADCS
-- [ ] Cypher Queries
-- [ ] attack paths
-- [ ] Azure
+- [x] Graph Search
+- [x] ADCS
+- [ ] Cypher Queries 
+- [ ] attack paths - Only for enterprise
+- [ ] Azure - Need Cypher for This
 - [x] Refactor apis into classes to make code a little bit more presentable
 - [ ] Refine the prompt engineering for the MCP Tools to improve the LLMs capability
 - [ ] figure out ways to support other LLMs (ollama, OpenAI, etc)
