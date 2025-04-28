@@ -198,7 +198,7 @@ class BloodhoundAPI:
         self.gpos = GPOsClient(self.base_client)
         self.graph = GraphClient(self.base_client)
         self.adcs = ADCSClient(self.base_client)
-        #self.cypher = CypherClient(self.base_client)
+        self.cypher = CypherClient(self.base_client)
 
     
     def test_connection(self) -> Dict[str, Any]:
@@ -1531,6 +1531,7 @@ class GraphClient:
         return self.base_client.request("GET", "/api/v2/graphs/relay-targets", params=params)
     
 class ADCSClient:
+
     """Client for ADCS-related Bloodhound API endpoints"""
     
     def __init__(self, base_client: BloodhoundBaseClient):
@@ -1651,3 +1652,149 @@ class ADCSClient:
             "type": "list"
         }
         return self.base_client.request("GET", f"/api/v2/aia-cas/{ca_id}/controllers", params=params)
+    
+class CypherClient:
+    """Client for Cypher query related BloodHound API endpoints"""
+    
+    def __init__(self, base_client: BloodhoundBaseClient):
+        self.base_client = base_client
+    
+    def run_query(self, query: str, include_properties: bool = True) -> Dict[str, Any]:
+        """
+        Run a custom Cypher query directly against the database
+        
+        Args:
+            query: The Cypher query to execute
+            include_properties: Whether to include node/edge properties in response
+            
+        Returns:
+            Dictionary with graph data (nodes and edges)
+            
+        Important: Since you're using BloodHound CE, you need to ensure you have the 
+        correct endpoint for running Cypher queries. This might be /api/v2/graphs/cypher
+        based on the Swagger file.
+        """
+        data = {
+            "query": query,
+            "includeproperties": include_properties
+        }
+        return self.base_client.request("POST", "/api/v2/graphs/cypher", data=data)
+    
+    def list_saved_queries(self, skip: int = 0, limit: int = 100, 
+                          sort_by: str = None, name: str = None, 
+                          query: str = None, user_id: str = None, 
+                          scope: str = None) -> Dict[str, Any]:
+        """
+        List saved Cypher queries
+        
+        Args:
+            skip: Number of queries to skip
+            limit: Maximum queries to return
+            sort_by: Field to sort by (userid, name, query, id, createdat)
+            name: Filter by query name
+            query: Filter by query string
+            user_id: Filter by user ID
+            scope: Filter by scope
+            
+        Returns:
+            Dictionary with array of saved queries
+        """
+        params = {
+            "skip": skip,
+            "limit": limit
+        }
+        
+        if sort_by:
+            params["sortby"] = sort_by
+        if name:
+            params["name"] = name
+        if query:
+            params["query"] = query
+        if user_id:
+            params["userid"] = user_id
+        if scope:
+            params["scope"] = scope
+            
+        return self.base_client.request("GET", "/api/v2/saved-queries", params=params)
+    
+    def create_saved_query(self, name: str, query: str) -> Dict[str, Any]:
+        """
+        Create a new saved Cypher query
+        
+        Args:
+            name: Name of the saved query
+            query: The Cypher query to save
+            
+        Returns:
+            Dictionary with the created saved query
+        """
+        data = {
+            "name": name,
+            "query": query
+        }
+        return self.base_client.request("POST", "/api/v2/saved-queries", data=data)
+    
+    def update_saved_query(self, query_id: int, name: str = None, 
+                          query: str = None) -> Dict[str, Any]:
+        """
+        Update an existing saved query
+        
+        Args:
+            query_id: ID of the saved query to update
+            name: New name for the query (optional)
+            query: New query string (optional)
+            
+        Returns:
+            Dictionary with the updated saved query
+        """
+        data = {}
+        if name:
+            data["name"] = name
+        if query:
+            data["query"] = query
+            
+        return self.base_client.request("PUT", f"/api/v2/saved-queries/{query_id}", data=data)
+    
+    def delete_saved_query(self, query_id: int) -> None:
+        """
+        Delete a saved query
+        
+        Args:
+            query_id: ID of the saved query to delete
+        """
+        self.base_client.request("DELETE", f"/api/v2/saved-queries/{query_id}")
+    
+    def share_saved_query(self, query_id: int, user_ids: List[str] = None, 
+                         public: bool = False) -> Dict[str, Any]:
+        """
+        Share a saved query with users or make it public
+        
+        Args:
+            query_id: ID of the saved query to share
+            user_ids: List of user IDs to share with
+            public: Whether to make the query public
+            
+        Returns:
+            Dictionary with sharing information
+        """
+        data = {"public": public}
+        if user_ids:
+            data["userids"] = user_ids
+            
+        return self.base_client.request("PUT", 
+                                      f"/api/v2/saved-queries/{query_id}/permissions", 
+                                      data=data)
+    
+    def delete_saved_query_permissions(self, query_id: int, 
+                                     user_ids: List[str]) -> None:
+        """
+        Revoke saved query permissions from users
+        
+        Args:
+            query_id: ID of the saved query
+            user_ids: List of user IDs to revoke access from
+        """
+        data = {"userids": user_ids}
+        self.base_client.request("DELETE", 
+                               f"/api/v2/saved-queries/{query_id}/permissions", 
+                               data=data)

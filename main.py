@@ -31,6 +31,150 @@ load_dotenv()
 mcp = FastMCP("bloodhound_mcp")
 bloodhound_api = BloodhoundAPI()
 
+# Create Resources for the LLM 
+@mcp.resource("bloodhound://cypher/examples")
+def cypher_examples() -> str:
+    """Provides example Cypher queries for common BloodHound operations"""
+    examples = """
+BloodHound Cypher Query Examples
+================================
+
+Syntax Notes:
+-------------
+- BloodHound uses Neo4j as its graph database
+- Nodes are represented with parentheses: (n:NodeType)
+- Relationships are represented with square brackets: [r:RELATIONSHIP_TYPE]
+- Patterns chain nodes and relationships: (n)-[r]->(m)
+- The RETURN clause specifies what to output
+
+Common Node Types:
+-----------------
+- AZTenant: Azure AD Tenant
+- AZBase: Base Azure object type 
+- AZUser: Azure user
+- AZGroup: Azure group
+- AZGlobalAdmin: Global Administrator role
+- AZApp: Azure application/service principal
+- Computer: Active Directory computer
+- User: Active Directory user
+- Group: Active Directory group
+
+Example Queries:
+---------------
+
+1. Find all Azure Global Admins:
+   MATCH p = (:AZBase)-[:AZGlobalAdmin*1..]->(:AZTenant)
+   RETURN p
+
+2. Find Azure users that have administrative roles:
+   MATCH p=(u:AZUser)-[r:AZGlobalAdmin|AZPrivilegedRoleAdmin]->(t:AZTenant)
+   RETURN u.displayname, u.objectid, u.usertype, type(r) as role_type
+
+3. Find Azure Service Principals with dangerous permissions:
+   MATCH p=(sp:AZServicePrincipal)-[r:AZApplicationAdministrator|AZCloudApplicationAdministrator]->(t:AZTenant)
+   RETURN sp.displayname, sp.objectid, type(r) as permission
+
+4. Find Azure users with direct dangerous permissions:
+   MATCH p=(u:AZUser)-[r:AZGlobalAdmin|AZPrivilegedRoleAdmin|AZApplicationAdministrator]->(t:AZTenant)
+   RETURN u.displayname, u.objectid, type(r) as role
+
+5. Identify potential attack paths to Global Admin:
+   MATCH p=shortestPath((n:AZUser {name:'targetuser@domain.com'})-[*1..]->(a:AZGlobalAdmin))
+   RETURN p
+
+6. Find all Domain Admins in Active Directory:
+   MATCH p=(n)-[r:MemberOf*1..]->(g:Group {name:"DOMAIN ADMINS@DOMAIN.COM"})
+   RETURN p
+
+7. Find Azure users who can reset passwords:
+   MATCH p=(u:AZUser)-[r:AZResetPassword]->(target:AZUser)
+   RETURN u.displayname, count(target) as can_reset_count
+   ORDER BY can_reset_count DESC
+
+8. Find kerberoastable users:
+    MATCH (u:User)
+    WHERE u.hasspn=true
+    AND u.enabled = true
+    AND NOT u.objectid ENDS WITH '-502'
+    AND NOT COALESCE(u.gmsa, false) = true
+    AND NOT COALESCE(u.msa, false) = true
+    RETURN u
+
+9. Find paths from owned users to Domain Admin:
+    MATCH p=shortestPath((s:Base)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|WriteOwnerLimitedRights|OwnsLimitedRights|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|Contains|DCFor|TrustedBy*1..]->(t:Base))
+    WHERE COALESCE(s.system_tags, '') CONTAINS 'owned' AND s<>t
+    RETURN p
+
+10. Find Azure users with the most permissions:
+    MATCH (u:AZUser)
+    OPTIONAL MATCH (u)-[r]->(t)
+    WITH u, count(r) as num_permissions
+    RETURN u.displayname, num_permissions
+    ORDER BY num_permissions DESC
+    LIMIT 10
+"""
+    return examples
+
+@mcp.resource("bloodhound://cypher/patterns")
+def cypher_patterns() -> str:
+    """Provides common patterns for BloodHound Cypher queries"""
+    patterns = """
+BloodHound Cypher Query Patterns
+===============================
+
+Finding Administrative Users:
+---------------------------
+Pattern: MATCH p=(base)-[relationship*1..]->(target)
+
+For Azure environments:
+- Base: :AZBase, :AZUser, :AZServicePrincipal
+- Relationships: :AZGlobalAdmin, :AZPrivilegedRoleAdmin, :AZApplicationAdministrator
+- Target: :AZTenant, :AZApp
+
+For AD environments:  
+- Base: :User, :Computer, :Group
+- Relationships: :MemberOf, :AdminTo, :GenericAll
+- Target: :Group, :Computer, :Domain
+
+Path Analysis:
+-------------
+Use shortestPath() for finding the most direct attack path:
+MATCH p=shortestPath((start)-[*1..]->(end))
+WHERE /* add conditions */
+RETURN p
+
+To find all possible paths within a certain length:
+MATCH p=(start)-[*1..5]->(end)
+WHERE /* add conditions */
+RETURN p
+
+Permission Analysis:
+-------------------
+To count permissions for an object:
+MATCH (obj)-[r]->(target)
+WITH obj, count(r) as permission_count
+RETURN obj, permission_count
+ORDER BY permission_count DESC
+
+Relationship Types:
+-----------------
+Azure:
+- AZGlobalAdmin: Global Admin role
+- AZPrivilegedRoleAdmin: Privileged Role Admin
+- AZResetPassword: Can reset passwords
+- AZOwns: Owns the object
+- AZExecuteCommand: Can execute commands
+
+Active Directory:
+- MemberOf: Group membership
+- AdminTo: Administrative access
+- GenericAll: Full control
+- ForceChangePassword: Can force password change
+- DCSync: Can perform DCSync
+"""
+    return patterns
+
+
 # Define prompts
 @mcp.prompt()
 def bloodhound_assistant() -> str:
@@ -143,6 +287,43 @@ def bloodhound_assistant() -> str:
     For each of these entities, you can analyze who controls them, which is critical for 
     identifying potential ADCS-based attack vectors like ESC1 (Misconfigured Certificate Templates),
     ESC2 (Vulnerable Certificate Template Access Control), and other ADCS attacks.
+
+    You also have the capability to use cypher queries to perform advanced searches and analysis within the Bloodhound database.
+    When creating Cypher queries for BloodHound, remember:
+
+    1. BloodHound uses specific node labels for different object types:
+    - Active Directory: User, Computer, Group, Domain, OU, GPO
+    - Azure: AZUser, AZGroup, AZApp, AZServicePrincipal, AZTenant
+
+    2. Relationship names are specific to BloodHound's data model:
+    - For Azure admins, use :AZGlobalAdmin, not :AZHasRole
+    - For group membership, use :MemberOf
+    - For paths, use *1.. to indicate "one or more" relationships
+
+    3. Always use pattern matching (p =) when searching for paths
+    4. Use shortestPath() for finding the most direct attack paths
+    5. Include properties like .displayname, .objectid, or .name based on node type
+
+    If you need to understand the proper syntax for BloodHound Cypher queries, refer to the resources provided at:
+    - bloodhound://cypher/examples for specific query examples
+    - bloodhound://cypher/patterns for common query patterns
+    Remember that BloodHound Cypher queries are designed for attack path analysis and differ somewhat from standard Neo4j Cypher queries.
+    You can reference the already saved cypher queries in the BloodHound database and if one of the queries you run does not exist in bloodhound you can save it into the BloodHound server for future use.
+    You should name the query in a way that is descriptive of what the query does, so that it can be easily referenced later.
+
+    # Azure Analysis Instructions
+    When responding to questions about Azure environments (including Azure AD, Entra ID, AzureAD, Microsoft Entra, or any Azure-related resources), 
+    you should ALWAYS prioritize using Cypher queries via the run_cypher_query tool instead of basic API endpoints.
+    For Azure environments, Cypher queries provide more comprehensive and flexible analysis capabilities.
+    
+    Example Azure-related Cypher patterns:
+    - Finding Azure Global Admins: MATCH p = (:AZBase)-[:AZGlobalAdmin*1..]->(:AZTenant) RETURN p
+    - Finding Azure users with admin roles: MATCH p=(u:AZUser)-[r:AZGlobalAdmin|AZPrivilegedRoleAdmin]->(t:AZTenant) RETURN u.displayname, u.objectid, type(r) as role_type
+    - Finding attack paths to Global Admin: MATCH p=shortestPath((n:AZUser {name:'targetuser@domain.com'})-[*1..]->(a:AZGlobalAdmin)) RETURN p
+    - You can always fall back to the bloodhound://cypher/examples and bloodhound://cypher/patterns resources as references to construct queries
+    
+    Always use AZ-prefixed node types (AZUser, AZGroup, AZServicePrincipal, AZApp, AZTenant, etc.) when analyzing Azure environments.
+    
     
     To get information, use the available tools to query the Bloodhound database.
     """
@@ -2006,7 +2187,80 @@ def get_aia_ca_controllers(ca_id: str, limit: int = 100, skip: int = 0):
         })
 
 # MCP tools for getting the AI to leverage Cypher Queries 
+@mcp.tool()
+def run_cypher_query(query: str, include_properties: bool = True):
+    """
+    Run a custom Cypher query on the BloodHound Neo4j database.
+    
+    Args:
+        query: The Cypher query to execute
+        include_properties: Whether to include node/edge properties in the response
+    
+    Returns:
+        JSON response with graph data (nodes and edges)
+    """
+    try:
+        result = bloodhound_api.cypher.run_query(query, include_properties)
+        return json.dumps({
+            "message": "Cypher query executed successfully",
+            "result": result.get("data", {}),
+        })
+    except Exception as e:
+        logger.error(f"Error executing Cypher query: {e}")
+        return json.dumps({
+            "error": f"Failed to execute Cypher query: {str(e)}"
+        })
 
+# Create saved query management tools
+@mcp.tool()
+def create_saved_query(name: str, query: str):
+    """
+    Create a new saved Cypher query.
+    
+    Args:
+        name: Name for the saved query
+        query: The Cypher query to save
+    
+    Returns:
+        JSON response with the created saved query data
+    """
+    try:
+        saved_query = bloodhound_api.cypher.create_saved_query(name, query)
+        return json.dumps({
+            "message": f"Successfully created saved query: {name}",
+            "query": saved_query
+        })
+    except Exception as e:
+        logger.error(f"Error creating saved query: {e}")
+        return json.dumps({
+            "error": f"Failed to create saved query: {str(e)}"
+        })
+
+# list already saved queries
+@mcp.tool()
+def list_saved_queries(skip: int = 0, limit: int = 100, name: str = None):
+    """
+    List saved Cypher queries.
+    
+    Args:
+        skip: Number of queries to skip for pagination
+        limit: Maximum number of queries to return
+        name: Filter by query name
+    
+    Returns:
+        JSON response with list of saved queries
+    """
+    try:
+        queries = bloodhound_api.cypher.list_saved_queries(skip, limit, name)
+        return json.dumps({
+            "message": f"Found {len(queries)} saved queries",
+            "queries": queries
+        })
+    except Exception as e:
+        logger.error(f"Error listing saved queries: {e}")
+        return json.dumps({
+            "error": f"Failed to list saved queries: {str(e)}"
+        })
 
 
 # main function to start the server
