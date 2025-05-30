@@ -11,6 +11,7 @@ https://youtu.be/eZBT0Iw9CMA
 3. Claude Desktop
 4. A Bloodhoud CE instance running somewhere accessible (I ran it in my homelab)
 5. Bloodhound dump files loaded into bloodhound (I used an initial dump from GOAD)
+6. Bloodhound Key and ID for the authentication token
 
 ## Usage with Claude Desktop
 Using the Developer Tools in Settings add the config in [claude.json](./claude.json)
@@ -48,19 +49,30 @@ The bloodhound ce API is massive and I need to first implement all of the api ca
 - [x] computers
 - [x] OU's
 - [x] GPOs
-- [ ] ADCS
-- [ ] Cypher Queries
-- [ ] attack paths
-- [ ] Azure
+- [x] Graph Search
+- [x] ADCS
+- [x] Cypher Queries 
+    - [ ] some cypher queries work (fixed with MCPResources)
+    - [ ] more complex queries fail to work
+- [ ] attack paths - Only for enterprise
+- [ ] Azure - Need Cypher for This
 - [x] Refactor apis into classes to make code a little bit more presentable
 - [ ] Refine the prompt engineering for the MCP Tools to improve the LLMs capability
+- [ ] Let the LLM interact with BloodHound
+    - [ ] Save in successful queries not already in there (Cypher API)
+    - [ ] CRUD on Asset Lists (Asset Isolation API)
 - [ ] figure out ways to support other LLMs (ollama, OpenAI, etc)
+- [ ] Let the LLM act as a user within bloodhound
+    - Would be added as a new user
+    - would be able to manage the bloodhound server as if it was an admin
+    - [ ] Authentication as an individual user
+    - [ ] implement bloodhound management apis
+        - [ ] upload data
+        - [ ] download collectors
+        - [ ] run collectors
+            - would require a new mcp to run sharphound or bloodhound.py
+- [ ] implementation with LLM or privately hosted LLMs
 
-
-
-# limitations
-would like a much bigger and better bloodhound dump to run this on.
-I am lacking any azure dumps, adcs dumps, basiclaly just running off the north.sevenkingdoms.local domain in GOAD :/
 
 
 ## Disclaimer
@@ -70,6 +82,8 @@ This is using Claude Desktop and therefore whatever data is being used is being 
 
 ## Credits
 Orange Cyberdefense for making goad so i can test this
+SpecterOps BloodHound for making BloodHound
+@jlowin for creating and supporting FastMCP (https://github.com/jlowin/fastmcp)
 @xpn for his mythic mcp that made me realize there was a better alternative than fastapi
 
 

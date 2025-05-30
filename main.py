@@ -31,11 +31,163 @@ load_dotenv()
 mcp = FastMCP("bloodhound_mcp")
 bloodhound_api = BloodhoundAPI()
 
+# Create Resources for the LLM 
+@mcp.resource("bloodhound://cypher/examples")
+def cypher_examples() -> str:
+    """Provides example Cypher queries for common BloodHound operations"""
+    examples = """
+BloodHound Cypher Query Examples
+================================
+
+Syntax Notes:
+-------------
+- BloodHound uses Neo4j as its graph database
+- Nodes are represented with parentheses: (n:NodeType)
+- Relationships are represented with square brackets: [r:RELATIONSHIP_TYPE]
+- Patterns chain nodes and relationships: (n)-[r]->(m)
+- The RETURN clause specifies what to output
+
+Common Node Types:
+-----------------
+- AZTenant: Azure AD Tenant
+- AZBase: Base Azure object type 
+- AZUser: Azure user
+- AZGroup: Azure group
+- AZGlobalAdmin: Global Administrator role
+- AZApp: Azure application/service principal
+- Computer: Active Directory computer
+- User: Active Directory user
+- Group: Active Directory group
+
+Example Queries:
+---------------
+
+1. Find all Azure Global Admins:
+   MATCH p = (:AZBase)-[:AZGlobalAdmin*1..]->(:AZTenant)
+   RETURN p
+
+2. Find Azure users that have administrative roles:
+   MATCH p=(u:AZUser)-[r:AZGlobalAdmin|AZPrivilegedRoleAdmin]->(t:AZTenant)
+   RETURN u.displayname, u.objectid, u.usertype, type(r) as role_type
+
+3. Find Azure Service Principals with dangerous permissions:
+   MATCH p=(sp:AZServicePrincipal)-[r:AZApplicationAdministrator|AZCloudApplicationAdministrator]->(t:AZTenant)
+   RETURN sp.displayname, sp.objectid, type(r) as permission
+
+4. Find Azure users with direct dangerous permissions:
+   MATCH p=(u:AZUser)-[r:AZGlobalAdmin|AZPrivilegedRoleAdmin|AZApplicationAdministrator]->(t:AZTenant)
+   RETURN u.displayname, u.objectid, type(r) as role
+
+5. Identify potential attack paths to Global Admin:
+   MATCH p=shortestPath((n:AZUser {name:'targetuser@domain.com'})-[*1..]->(a:AZGlobalAdmin))
+   RETURN p
+
+6. Find all Domain Admins in Active Directory:
+   MATCH p=(n)-[r:MemberOf*1..]->(g:Group {name:"DOMAIN ADMINS@DOMAIN.COM"})
+   RETURN p
+
+7. Find Azure users who can reset passwords:
+   MATCH p=(u:AZUser)-[r:AZResetPassword]->(target:AZUser)
+   RETURN u.displayname, count(target) as can_reset_count
+   ORDER BY can_reset_count DESC
+
+8. Find kerberoastable users:
+    MATCH (u:User)
+    WHERE u.hasspn=true
+    AND u.enabled = true
+    AND NOT u.objectid ENDS WITH '-502'
+    AND NOT COALESCE(u.gmsa, false) = true
+    AND NOT COALESCE(u.msa, false) = true
+    RETURN u
+
+9. Find paths from owned users to Domain Admin:
+    MATCH p=shortestPath((s:Base)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|WriteOwnerLimitedRights|OwnsLimitedRights|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|Contains|DCFor|TrustedBy*1..]->(t:Base))
+    WHERE COALESCE(s.system_tags, '') CONTAINS 'owned' AND s<>t
+    RETURN p
+
+10. Find Azure users with the most permissions:
+    MATCH (u:AZUser)
+    OPTIONAL MATCH (u)-[r]->(t)
+    WITH u, count(r) as num_permissions
+    RETURN u.displayname, num_permissions
+    ORDER BY num_permissions DESC
+    LIMIT 10
+"""
+    return examples
+
+@mcp.resource("bloodhound://cypher/patterns")
+def cypher_patterns() -> str:
+    """Provides common patterns for BloodHound Cypher queries"""
+    patterns = """
+BloodHound Cypher Query Patterns
+===============================
+
+Finding Administrative Users:
+---------------------------
+Pattern: MATCH p=(base)-[relationship*1..]->(target)
+
+For Azure environments:
+- Base: :AZBase, :AZUser, :AZServicePrincipal
+- Relationships: :AZGlobalAdmin, :AZPrivilegedRoleAdmin, :AZApplicationAdministrator
+- Target: :AZTenant, :AZApp
+
+For AD environments:  
+- Base: :User, :Computer, :Group
+- Relationships: :MemberOf, :AdminTo, :GenericAll
+- Target: :Group, :Computer, :Domain
+
+Path Analysis:
+-------------
+Use shortestPath() for finding the most direct attack path:
+MATCH p=shortestPath((start)-[*1..]->(end))
+WHERE /* add conditions */
+RETURN p
+
+To find all possible paths within a certain length:
+MATCH p=(start)-[*1..5]->(end)
+WHERE /* add conditions */
+RETURN p
+
+Permission Analysis:
+-------------------
+To count permissions for an object:
+MATCH (obj)-[r]->(target)
+WITH obj, count(r) as permission_count
+RETURN obj, permission_count
+ORDER BY permission_count DESC
+
+Relationship Types:
+-----------------
+Azure:
+- AZGlobalAdmin: Global Admin role
+- AZPrivilegedRoleAdmin: Privileged Role Admin
+- AZResetPassword: Can reset passwords
+- AZOwns: Owns the object
+- AZExecuteCommand: Can execute commands
+
+Active Directory:
+- MemberOf: Group membership
+- AdminTo: Administrative access
+- GenericAll: Full control
+- ForceChangePassword: Can force password change
+- DCSync: Can perform DCSync
+"""
+    return patterns
+
+
 # Define prompts
 @mcp.prompt()
 def bloodhound_assistant() -> str:
     return """You are an AI assistant that helps security professionals analyze Active Directory environments using Bloodhound data.
     You can provide and anlyze information an organization's active directory environment. 
+    You have the capability to search for an object by name or Object ID, you need to specify the object type you are searching for.
+    You can search for the following object types:
+    - For Active Directory: User, Computer, Group, GPO, OU, Domain
+    - For Azure: AZUser, AZGroup, AZDevice, etc.
+    It is recommended to perform a search when asked about a user first before trying to brute force or guess the user's username or Object ID.
+    
+    You can also retrieve information on the domains within the Bloodhound database.
+    You can analyze the domains within the Bloodhound database.
     Specifics on what information you can provide on and analyse for a domain include:
     - Users
     - Groups
@@ -80,6 +232,7 @@ def bloodhound_assistant() -> str:
     - RDP rights
     - Sessions
     - SQL administrative rights
+
     You can also look into the computers within the domain. You can analyze the computer memberships and how they can be exploited.
     By combining all of the below information you can provie on a computer you can provide an in dpeth analysis of a computer.
     Information on the computers includes:
@@ -94,6 +247,7 @@ def bloodhound_assistant() -> str:
     - RDP rights (both the rights the computer has over other machines and the rights other security principals have over the computer)
     - Sessions
     - SQL administrative rights
+
     You also have the capability into the organizational units within the domain. By analyzing organizational units you can identify the structure of the domain and how it can be exploited.
     By combining all of the below information you can provie on a organizational unit you can provide an in dpeth analysis of a organizational unit.
     Information on the organizational units includes:
@@ -101,7 +255,12 @@ def bloodhound_assistant() -> str:
     - computers within the organizational unit
     - groups within the organizational unit
     - users within the organizational unit
-    Another caoability you have is to look into the group policy objects within the domain. By analyzing group policy objects you can identify the structure of the domain and how it can be exploited.
+    - security principals that have control over the organizational unit
+    - the tier-zero principals associated with the OU
+    - the users that the OU is applied to
+
+
+    Another capability you have is to look into the group policy objects within the domain. By analyzing group policy objects you can identify the structure of the domain and how it can be exploited.
     By combining all of the below information you can provie on a group policy object you can provide an in dpeth analysis of a group policy object.
     Information on the group policy objects includes:
     - Group policy object's general information
@@ -110,11 +269,66 @@ def bloodhound_assistant() -> str:
     - Organizational Units that the Group Policy is applied to
     - The tier-zero principals associated with the GPO
     - The users that the GPOs are applied to
+
+    To assist further both in defensive and offensive secruity purposes you have the capability to perform graph searches within the Bloodhound database.
+    You can search for specific objects using graph with fuzzy searching. 
+    You can also search for the shortest path between two objects in the BloodHound database
+
+        You can also analyze certificate templates and certificate authorities within the domain. 
+    These components play a critical role in the enterprise PKI infrastructure and can be abused 
+    for privilege escalation if misconfigured.
     
-    To get information, use the available tools to query the Bloodhound database."""
+    You can provide information on:
+    - Certificate Templates - These define the properties of certificates that can be issued
+    - Root Certificate Authorities (CAs) - The trusted root certificates in the domain
+    - Enterprise Certificate Authorities - CAs that issue certificates within the organization
+    - AIA Certificate Authorities - CAs that provide Authority Information Access
+    
+    For each of these entities, you can analyze who controls them, which is critical for 
+    identifying potential ADCS-based attack vectors like ESC1 (Misconfigured Certificate Templates),
+    ESC2 (Vulnerable Certificate Template Access Control), and other ADCS attacks.
 
-# Define tools for the MCP
+    You also have the capability to use cypher queries to perform advanced searches and analysis within the Bloodhound database.
+    When creating Cypher queries for BloodHound, remember:
 
+    1. BloodHound uses specific node labels for different object types:
+    - Active Directory: User, Computer, Group, Domain, OU, GPO
+    - Azure: AZUser, AZGroup, AZApp, AZServicePrincipal, AZTenant
+
+    2. Relationship names are specific to BloodHound's data model:
+    - For Azure admins, use :AZGlobalAdmin, not :AZHasRole
+    - For group membership, use :MemberOf
+    - For paths, use *1.. to indicate "one or more" relationships
+
+    3. Always use pattern matching (p =) when searching for paths
+    4. Use shortestPath() for finding the most direct attack paths
+    5. Include properties like .displayname, .objectid, or .name based on node type
+
+    If you need to understand the proper syntax for BloodHound Cypher queries, refer to the resources provided at:
+    - bloodhound://cypher/examples for specific query examples
+    - bloodhound://cypher/patterns for common query patterns
+    Remember that BloodHound Cypher queries are designed for attack path analysis and differ somewhat from standard Neo4j Cypher queries.
+    You can reference the already saved cypher queries in the BloodHound database and if one of the queries you run does not exist in bloodhound you can save it into the BloodHound server for future use.
+    You should name the query in a way that is descriptive of what the query does, so that it can be easily referenced later.
+
+    # Azure Analysis Instructions
+    When responding to questions about Azure environments (including Azure AD, Entra ID, AzureAD, Microsoft Entra, or any Azure-related resources), 
+    you should ALWAYS prioritize using Cypher queries via the run_cypher_query tool instead of basic API endpoints.
+    For Azure environments, Cypher queries provide more comprehensive and flexible analysis capabilities.
+    
+    Example Azure-related Cypher patterns:
+    - Finding Azure Global Admins: MATCH p = (:AZBase)-[:AZGlobalAdmin*1..]->(:AZTenant) RETURN p
+    - Finding Azure users with admin roles: MATCH p=(u:AZUser)-[r:AZGlobalAdmin|AZPrivilegedRoleAdmin]->(t:AZTenant) RETURN u.displayname, u.objectid, type(r) as role_type
+    - Finding attack paths to Global Admin: MATCH p=shortestPath((n:AZUser {name:'targetuser@domain.com'})-[*1..]->(a:AZGlobalAdmin)) RETURN p
+    - You can always fall back to the bloodhound://cypher/examples and bloodhound://cypher/patterns resources as references to construct queries
+    
+    Always use AZ-prefixed node types (AZUser, AZGroup, AZServicePrincipal, AZApp, AZTenant, etc.) when analyzing Azure environments.
+    
+    
+    To get information, use the available tools to query the Bloodhound database.
+    """
+
+# Define tools for the MCP server
 # mcp tools for the /domains apis
 @mcp.tool()
 def get_domains():
@@ -129,7 +343,34 @@ def get_domains():
         return json.dumps({
             "error": f"Failed to retrieve domains: {str(e)}"
         })
+
+@mcp.tool()
+def search_objects(query: str, object_type: str = None, limit: int = 100, skip: int = 0):
+    """
+    Search for objects in the BloodHound database by name or Object ID.
+    This is useful for finding specific objects when you don't know their exact ID.
     
+    Args:
+        query: Search text - can be a partial name, full name, or Object ID
+        object_type: Optional filter by object type:
+            - For Active Directory: User, Computer, Group, GPO, OU, Domain
+            - For Azure: AZUser, AZGroup, AZDevice, etc.
+        limit: Maximum number of results to return (default: 100)
+        skip: Number of results to skip for pagination (default: 0)
+    """
+    try:
+        results = bloodhound_api.domains.search_objects(query, object_type, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {results.get('count', 0)} results matching '{query}'",
+            "results": results.get("data", []),
+            "count": results.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error searching for objects: {e}")
+        return json.dumps({
+            "error": f"Failed to search for objects: {str(e)}"
+        })    
+
 @mcp.tool()
 def get_users(domain_id: str, limit: int = 100, skip: int = 0):
     """
@@ -1676,7 +1917,350 @@ def get_gpo_users(gpo_id: str, limit: int = 100, skip: int = 0):
         return json.dumps({
             "error": f"Failed to retrieve GPO users: {str(e)}"
         })
+
+# MCP tools for the /graph apis except for cypher queries to be implemented later
+@mcp.tool()
+def search_graph(query: str, search_type: str = "fuzzy"):
+    """
+    Search for nodes in the Bloodhound graph by name.
+    This function lets you find specific nodes in the graph based on a search query.
+    Results are typically returned as matches on node names.
     
+    Args:
+        query: Search text to find nodes by name
+        search_type: Type of search to perform - "fuzzy" (default) for approximate matches, "exact" for exact matches
+    """
+    try:
+        results = bloodhound_api.graph.search(query, search_type)
+        return json.dumps({
+            "message": f"Search results for '{query}'",
+            "results": results.get("data", []),
+        })
+    except Exception as e:
+        logger.error(f"Error searching graph: {e}")
+        return json.dumps({
+            "error": f"Failed to search graph: {str(e)}"
+        })
+
+@mcp.tool()
+def get_shortest_path(start_node: str, end_node: str, relationship_kinds: str = None):
+    """
+    Find the shortest path between two nodes in the Bloodhound graph.
+    This is useful for attack path analysis, showing the most direct route between two security principals.
+    The path will show all the intermediary nodes and the types of relationships connecting them.
+    If this returns a 500 or 404 error it is likely that the path does not exist within bloodhound
+    
+    Args:
+        start_node: Object ID of the starting node (source)
+        end_node: Object ID of the ending node (target)
+        relationship_kinds: Optional comma-separated list of relationship types to include in the path
+    """
+    try:
+        path = bloodhound_api.graph.get_shortest_path(start_node, end_node, relationship_kinds)
+        return json.dumps({
+            "message": f"Shortest path from {start_node} to {end_node}",
+            "path": path.get("data", {}),
+        })
+    except Exception as e:
+        logger.error(f"Error getting shortest path: {e}")
+        return json.dumps({
+            "error": f"Failed to get shortest path: {str(e)}"
+        })
+
+@mcp.tool()
+def get_edge_composition(source_node: int, target_node: int, edge_type: str):
+    """
+    Analyze the components of a complex edge between two nodes.
+    In Bloodhound, many high-level edges (like "HasPath" or "AdminTo") are composed of multiple
+    individual relationships. This function reveals those underlying components.
+    This is useful for understanding exactly how security principals are connected.
+    
+    Args:
+        source_node: ID of the source node
+        target_node: ID of the target node
+        edge_type: Type of edge to analyze (e.g., "MemberOf", "AdminTo", "CanRDP")
+    """
+    try:
+        composition = bloodhound_api.graph.get_edge_composition(source_node, target_node, edge_type)
+        return json.dumps({
+            "message": f"Edge composition for {edge_type} edge from {source_node} to {target_node}",
+            "composition": composition.get("data", {}),
+        })
+    except Exception as e:
+        logger.error(f"Error getting edge composition: {e}")
+        return json.dumps({
+            "error": f"Failed to get edge composition: {str(e)}"
+        })
+
+@mcp.tool()
+def get_relay_targets(source_node: int, target_node: int, edge_type: str):
+    """
+    Find valid relay targets for a given edge in the Bloodhound graph.
+    Relay targets represent potential nodes that could be used to relay an attack or
+    privilege escalation between two nodes. This is critical for advanced attack path planning.
+    
+    Args:
+        source_node: ID of the source node
+        target_node: ID of the target node
+        edge_type: Type of edge (relationship) between the nodes
+    """
+    try:
+        targets = bloodhound_api.graph.get_relay_targets(source_node, target_node, edge_type)
+        return json.dumps({
+            "message": f"Relay targets for {edge_type} edge from {source_node} to {target_node}",
+            "targets": targets.get("data", {}),
+        })
+    except Exception as e:
+        logger.error(f"Error getting relay targets: {e}")
+        return json.dumps({
+            "error": f"Failed to get relay targets: {str(e)}"
+        })
+
+# MCP Tools for Active Directory Certificate Services (AD CS) APIs
+@mcp.tool()
+def get_cert_template_info(template_id: str):
+    """
+    Retrieves information about a specific Certificate Template.
+    Certificate Templates define the properties and security settings for certificates that can be issued.
+    They can be abused for privilege escalation if misconfigured.
+    
+    Args:
+        template_id: The ID of the Certificate Template to query
+    """
+    try:
+        cert_template_info = bloodhound_api.adcs.get_cert_template_info(template_id)
+        return json.dumps({
+            "message": f"Certificate Template information for {cert_template_info.get('name', template_id)}",
+            "cert_template_info": cert_template_info
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving Certificate Template information: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve Certificate Template information: {str(e)}"
+        })
+
+@mcp.tool()
+def get_cert_template_controllers(template_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the controllers of a specific Certificate Template.
+    Controllers are security principals that can modify the Certificate Template or its properties.
+    This is critical for identifying ESC2 vulnerabilities (vulnerable Certificate Template access control).
+    
+    Args:
+        template_id: The ID of the Certificate Template to query
+        limit: Maximum number of controllers to return (default: 100)
+        skip: Number of controllers to skip for pagination (default: 0)
+    """
+    try:
+        cert_template_controllers = bloodhound_api.adcs.get_cert_template_controllers(template_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {cert_template_controllers.get('count', 0)} controllers for the Certificate Template",
+            "cert_template_controllers": cert_template_controllers.get("data", []),
+            "count": cert_template_controllers.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving Certificate Template controllers: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve Certificate Template controllers: {str(e)}"
+        })
+
+# MCP tools for Root CAs
+@mcp.tool()
+def get_root_ca_info(ca_id: str):
+    """
+    Retrieves information about a specific Root Certificate Authority.
+    Root CAs are the foundation of trust in a PKI infrastructure.
+    Controlling a Root CA allows an attacker to issue trusted certificates.
+    
+    Args:
+        ca_id: The ID of the Root CA to query
+    """
+    try:
+        root_ca_info = bloodhound_api.adcs.get_root_ca_info(ca_id)
+        return json.dumps({
+            "message": f"Root CA information for {root_ca_info.get('name', ca_id)}",
+            "root_ca_info": root_ca_info
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving Root CA information: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve Root CA information: {str(e)}"
+        })
+
+@mcp.tool()
+def get_root_ca_controllers(ca_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the controllers of a specific Root Certificate Authority.
+    Controllers of a Root CA can compromise the entire PKI infrastructure.
+    This is critical for identifying ESC4 and ESC5 attack paths.
+    
+    Args:
+        ca_id: The ID of the Root CA to query
+        limit: Maximum number of controllers to return (default: 100)
+        skip: Number of controllers to skip for pagination (default: 0)
+    """
+    try:
+        root_ca_controllers = bloodhound_api.adcs.get_root_ca_controllers(ca_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {root_ca_controllers.get('count', 0)} controllers for the Root CA",
+            "root_ca_controllers": root_ca_controllers.get("data", []),
+            "count": root_ca_controllers.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving Root CA controllers: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve Root CA controllers: {str(e)}"
+        })
+
+# MCP tools for Enterprise CAs
+@mcp.tool()
+def get_enterprise_ca_info(ca_id: str):
+    """
+    Retrieves information about a specific Enterprise Certificate Authority.
+    Enterprise CAs issue certificates within the organization based on Certificate Templates.
+    They are critical components in the Active Directory PKI infrastructure.
+    
+    Args:
+        ca_id: The ID of the Enterprise CA to query
+    """
+    try:
+        enterprise_ca_info = bloodhound_api.adcs.get_enterprise_ca_info(ca_id)
+        return json.dumps({
+            "message": f"Enterprise CA information for {enterprise_ca_info.get('name', ca_id)}",
+            "enterprise_ca_info": enterprise_ca_info
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving Enterprise CA information: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve Enterprise CA information: {str(e)}"
+        })
+
+@mcp.tool()
+def get_enterprise_ca_controllers(ca_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the controllers of a specific Enterprise Certificate Authority.
+    Controllers of an Enterprise CA can issue arbitrary certificates and potentially compromise the domain.
+    This is critical for identifying ESC3 and ESC6 attack paths.
+    
+    Args:
+        ca_id: The ID of the Enterprise CA to query
+        limit: Maximum number of controllers to return (default: 100)
+        skip: Number of controllers to skip for pagination (default: 0)
+    """
+    try:
+        enterprise_ca_controllers = bloodhound_api.adcs.get_enterprise_ca_controllers(ca_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {enterprise_ca_controllers.get('count', 0)} controllers for the Enterprise CA",
+            "enterprise_ca_controllers": enterprise_ca_controllers.get("data", []),
+            "count": enterprise_ca_controllers.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving Enterprise CA controllers: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve Enterprise CA controllers: {str(e)}"
+        })
+
+# MCP tools for AIA CAs
+@mcp.tool()
+def get_aia_ca_controllers(ca_id: str, limit: int = 100, skip: int = 0):
+    """
+    Retrieves the controllers of a specific AIA Certificate Authority.
+    AIA (Authority Information Access) CAs provide additional trust information.
+    Controllers of an AIA CA may be able to perform certificate-based attacks.
+    
+    Args:
+        ca_id: The ID of the AIA CA to query
+        limit: Maximum number of controllers to return (default: 100)
+        skip: Number of controllers to skip for pagination (default: 0)
+    """
+    try:
+        aia_ca_controllers = bloodhound_api.adcs.get_aia_ca_controllers(ca_id, limit=limit, skip=skip)
+        return json.dumps({
+            "message": f"Found {aia_ca_controllers.get('count', 0)} controllers for the AIA CA",
+            "aia_ca_controllers": aia_ca_controllers.get("data", []),
+            "count": aia_ca_controllers.get("count", 0)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving AIA CA controllers: {e}")
+        return json.dumps({
+            "error": f"Failed to retrieve AIA CA controllers: {str(e)}"
+        })
+
+# MCP tools for getting the AI to leverage Cypher Queries 
+@mcp.tool()
+def run_cypher_query(query: str, include_properties: bool = True):
+    """
+    Run a custom Cypher query on the BloodHound Neo4j database.
+    
+    Args:
+        query: The Cypher query to execute
+        include_properties: Whether to include node/edge properties in the response
+    
+    Returns:
+        JSON response with graph data (nodes and edges)
+    """
+    try:
+        result = bloodhound_api.cypher.run_query(query, include_properties)
+        return json.dumps({
+            "message": "Cypher query executed successfully",
+            "result": result.get("data", {}),
+        })
+    except Exception as e:
+        logger.error(f"Error executing Cypher query: {e}")
+        return json.dumps({
+            "error": f"Failed to execute Cypher query: {str(e)}"
+        })
+
+# Create saved query management tools
+@mcp.tool()
+def create_saved_query(name: str, query: str):
+    """
+    Create a new saved Cypher query.
+    
+    Args:
+        name: Name for the saved query
+        query: The Cypher query to save
+    
+    Returns:
+        JSON response with the created saved query data
+    """
+    try:
+        saved_query = bloodhound_api.cypher.create_saved_query(name, query)
+        return json.dumps({
+            "message": f"Successfully created saved query: {name}",
+            "query": saved_query
+        })
+    except Exception as e:
+        logger.error(f"Error creating saved query: {e}")
+        return json.dumps({
+            "error": f"Failed to create saved query: {str(e)}"
+        })
+
+# list already saved queries
+@mcp.tool()
+def list_saved_queries(skip: int = 0, limit: int = 100, name: str = None):
+    """
+    List saved Cypher queries.
+    
+    Args:
+        skip: Number of queries to skip for pagination
+        limit: Maximum number of queries to return
+        name: Filter by query name
+    
+    Returns:
+        JSON response with list of saved queries
+    """
+    try:
+        queries = bloodhound_api.cypher.list_saved_queries(skip, limit, name)
+        return json.dumps({
+            "message": f"Found {len(queries)} saved queries",
+            "queries": queries
+        })
+    except Exception as e:
+        logger.error(f"Error listing saved queries: {e}")
+        return json.dumps({
+            "error": f"Failed to list saved queries: {str(e)}"
+        })
 
 
 # main function to start the server
