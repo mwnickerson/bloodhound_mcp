@@ -1,4 +1,5 @@
 # Bloodhound Model Context Protocol Server
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 In an effort to learn about how MCPs function and their use case, I created an MCP to allow for Claude Desktop to work with the Data in Bloodhound Community edition
 
 Video of its Usage
