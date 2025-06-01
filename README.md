@@ -1,91 +1,230 @@
-# Bloodhound Model Context Protocol Server
-In an effort to learn about how MCPs function and their use case, I created an MCP to allow for Claude Desktop to work with the Data in Bloodhound Community edition
+# BloodHound Model Context Protocol Server
 
-Video of its Usage
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-https://youtu.be/eZBT0Iw9CMA
+A Model Context Protocol (MCP) server that enables Large Language Models to interact with BloodHound Community Edition data through Claude Desktop. This tool allows security professionals to query and analyze Active Directory attack paths using natural language.
 
-## Requirements
-1. uv
-2. python3
-3. Claude Desktop
-4. A Bloodhoud CE instance running somewhere accessible (I ran it in my homelab)
-5. Bloodhound dump files loaded into bloodhound (I used an initial dump from GOAD)
-6. Bloodhound Key and ID for the authentication token
+## Architecture
 
-## Usage with Claude Desktop
-Using the Developer Tools in Settings add the config in [claude.json](./claude.json)
-Modify the path to where the bloodhound mcp is located
-Save and restart claude desktop
+This MCP server provides a comprehensive interface to **BloodHound Community Edition's REST API**, not just a wrapper around Cypher queries. The implementation includes:
 
-Create a new converation and you should see a little hammer icon\
-Start the conversation by asking about the domains
+### API Coverage
+- **Complete REST API Integration**: Utilizes BloodHound CE's full REST API endpoints (`/api/v2/domains`, `/api/v2/users`, `/api/v2/groups`, etc.)
+- **Structured Data Access**: Leverages purpose-built API endpoints for users, computers, groups, OUs, and GPOs
+- **Advanced Functionality**: Includes ADCS analysis, graph search, shortest path algorithms, and edge composition analysis
+- **Authentication**: Implements BloodHound's signature-based authentication system
 
+### Why Not Just Cypher Queries?
+While Cypher queries are powerful, this MCP goes beyond simple query execution:
 
-## Notes
-This is in its early stages and I have learned a lot about MCPs and how cool they are. I would like to continue working on this, however the current implementation is very very basic.
+- **Structured API Responses**: Returns properly formatted, paginated data with counts and metadata
+- **Built-in Relationships**: Utilizes BloodHound's pre-computed relationship mappings
+- **Error Handling**: Proper HTTP status code handling and meaningful error messages
+- **Performance**: Leverages BloodHound's optimized endpoints rather than raw graph traversal
+- **Completeness**: Access to administrative rights, sessions, group memberships, and other complex relationships through dedicated endpoints
 
-UPDATE: I added fullish support for users in the domain, basically just look at the Bloodhound API documentation and it can answer any questions in the /domains and the /users api endpoints.
+### MCP Benefits
+As a proper Model Context Protocol implementation:
+- **Tool Discoverability**: LLM automatically discovers available analysis capabilities
+- **Type Safety**: Strongly typed parameters and responses
+- **Contextual Help**: Built-in documentation and examples for the LLM
+- **Resource Access**: Provides Cypher query examples and patterns as MCP resources
 
-The bloodhound ce API is massive and I need to first implement all of the api calls into the [bloodhound_api.py](./lib/bloodhound_api.py). Then functionality to make the MCP use them needs to be added. 
+## Demo
 
-*What it supports*
-- questions about the general domain
-- Questions about specific users
-- Questions about Groups
-- Questions about Computers
-- Questions about Organizational Units
-- Questions about Group Policy Objects
+[Watch the demonstration video](https://youtu.be/eZBT0Iw9CMA)
 
-*What it does not support*
-- Attack Paths
-- Cypher Queries
-- ADCS 
-- Azure
+## Features
 
-## To do
-- [x]  users
-- [x] groups
-- [x] computers
-- [x] OU's
-- [x] GPOs
-- [x] Graph Search
-- [x] ADCS
-- [x] Cypher Queries 
-    - [ ] some cypher queries work (fixed with MCPResources)
-    - [ ] more complex queries fail to work
-- [ ] attack paths - Only for enterprise
-- [ ] Azure - Need Cypher for This
-- [x] Refactor apis into classes to make code a little bit more presentable
-- [ ] Refine the prompt engineering for the MCP Tools to improve the LLMs capability
-- [ ] Let the LLM interact with BloodHound
-    - [ ] Save in successful queries not already in there (Cypher API)
-    - [ ] CRUD on Asset Lists (Asset Isolation API)
-- [ ] figure out ways to support other LLMs (ollama, OpenAI, etc)
-- [ ] Let the LLM act as a user within bloodhound
-    - Would be added as a new user
-    - would be able to manage the bloodhound server as if it was an admin
-    - [ ] Authentication as an individual user
-    - [ ] implement bloodhound management apis
-        - [ ] upload data
-        - [ ] download collectors
-        - [ ] run collectors
-            - would require a new mcp to run sharphound or bloodhound.py
-- [ ] implementation with LLM or privately hosted LLMs
+### Core Capabilities
+- **Domain Analysis**: Query domain information, users, groups, computers, and organizational structure
+- **User Intelligence**: Analyze user privileges, group memberships, sessions, and administrative rights
+- **Group Analysis**: Examine group memberships, controllers, and privilege relationships
+- **Computer Assessment**: Investigate computer privileges, sessions, and administrative access
+- **Organizational Units**: Explore OU structure and contained objects
+- **Group Policy Objects**: Analyze GPO assignments and controllers
+- **Certificate Services**: Investigate ADCS infrastructure and certificate templates
+- **Custom Cypher Queries**: Execute advanced Neo4j queries for complex analysis
+- **Graph Search**: Find shortest paths between security principals
 
+### Advanced Features
+- Natural language querying of BloodHound data
+- Attack path visualization and analysis
+- Privilege escalation identification
+- Cross-domain relationship analysis
+- Kerberoasting target identification
+- Administrative relationship mapping
 
+## Prerequisites
 
-## Disclaimer
-Since this a POC, i used data from Game Of Active Directory (shoutout to https://github.com/Orange-Cyberdefense/GOAD).
+- **Python 3.11+**
+- **uv** (Python package manager)
+- **Claude Desktop**
+- **BloodHound Community Edition** instance (accessible via network)
+- **BloodHound data** loaded (from SharpHound, BloodHound.py, etc.)
+- **BloodHound API credentials** (Token ID and Token Key)
 
-This is using Claude Desktop and therefore whatever data is being used is being sent to Anthropic, i highly recommend not using this on production Bloodhound dumps in its current state. There may be a way to get this to work with a Local LLM, however i am GPU poor and cannot run models on my local hosts.
+## Installation
 
-## Credits
-Orange Cyberdefense for making goad so i can test this
-SpecterOps BloodHound for making BloodHound
-@jlowin for creating and supporting FastMCP (https://github.com/jlowin/fastmcp)
-@xpn for his mythic mcp that made me realize there was a better alternative than fastapi
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd bloodhound-mcp
+   ```
 
+2. **Install dependencies**
+   ```bash
+   uv sync
+   ```
 
+3. **Configure environment variables**
+   
+   Create a `.env` file in the project root:
+   ```env
+   BLOODHOUND_DOMAIN=your-bloodhound-instance.domain.com
+   BLOODHOUND_TOKEN_ID=your-token-id
+   BLOODHOUND_TOKEN_KEY=your-token-key
+   ```
 
+## Configuration
+
+### Claude Desktop Setup
+
+1. Open Claude Desktop and navigate to **Settings** → **Developer Tools**
+2. Add the following configuration to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "bloodhound_mcp": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/your/bloodhound-mcp",
+        "run",
+        "main.py"
+      ]
+    }
+  }
+}
+```
+
+3. Replace `/path/to/your/bloodhound-mcp` with the actual path to your installation
+4. Restart Claude Desktop
+
+### BloodHound API Token Setup
+
+1. Log into your BloodHound CE instance
+2. Navigate to **Administration** → **API Tokens**
+3. Create a new token with appropriate permissions
+4. Note the Token ID and Token Key for your `.env` file
+
+## Usage
+
+### Getting Started
+
+1. Start a new conversation in Claude Desktop
+2. Look for the hammer icon (🔨) indicating MCP tools are available
+3. Begin by asking about your domains:
+
+```
+What domains are available in BloodHound?
+```
+
+### Example Queries
+
+**Domain Reconnaissance:**
+```
+Show me all users in the DOMAIN.LOCAL domain
+What computers are in the domain?
+Find all Domain Admins
+```
+
+**User Analysis:**
+```
+What administrative rights does john.doe@domain.local have?
+Show me all sessions for the user administrator
+What groups is this user a member of?
+```
+
+**Privilege Escalation:**
+```
+Find all kerberoastable users
+Show me users with DCSync privileges
+What computers can I RDP to from this user?
+```
+
+**Advanced Analysis:**
+```
+Run a cypher query to find all paths to Domain Admin
+Show me the shortest path from user A to user B
+Find all users with SPN set
+```
+
+## Security Considerations
+
+### Data Sensitivity Warning
+This tool processes BloodHound data through Claude Desktop, which means Active Directory information is transmitted to Anthropic's servers. **Do not use this tool with production or sensitive BloodHound data.**
+
+### Recommended Use Cases
+- **Training environments** (GOAD, DetectionLab, etc.)
+- **Demonstration purposes**
+- **Learning and research**
+- **Non-production domain analysis**
+
+### Best Practices
+- Use isolated lab environments
+- Sanitize data before analysis
+- Consider local LLM alternatives for sensitive environments
+- Regular token rotation for BloodHound API access
+
+## Testing
+
+Run the test suite to verify functionality:
+
+```bash
+# Basic functionality tests
+uv run pytest tests/test_basics.py -v
+
+# HTTP request testing
+uv run pytest tests/test_bloodhound_http.py -v
+
+# MCP tools testing
+uv run pytest tests/test_mcp_tools.py -v
+
+# Integration tests (requires running BloodHound instance)
+BLOODHOUND_INTEGRATION_TESTS=1 uv run pytest tests/test_integration.py -v
+```
+
+## Contributing
+
+Contributions are welcome! This project is designed for learning and experimentation with MCPs and BloodHound APIs.
+
+### Development Setup
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests for new functionality
+5. Run the test suite
+6. Submit a pull request
+
+## Roadmap
+
+- [ ] Enhanced attack path analysis
+- [ ] Azure Active Directory support
+- [ ] Advanced graph visualizations
+- [ ] Asset management integration
+- [ ] Local LLM compatibility
+- [ ] Additional ADCS attack scenarios
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- **Orange Cyberdefense** for [GOAD](https://github.com/Orange-Cyberdefense/GOAD) (used for testing)
+- **SpecterOps** for BloodHound Community Edition
+- **@jlowin** for [FastMCP](https://github.com/jlowin/fastmcp)
+- **@xpn** for MCP inspiration through the Mythic MCP project
 
