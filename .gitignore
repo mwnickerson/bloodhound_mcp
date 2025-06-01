@@ -11,11 +11,18 @@ __pycache__/
 venv/
 .venv/
 env/
+.pytest_cache/
+
 
 # my specific files
 my-claude.json
 unimplemented.txt
 bloodhound-swagger.json
+bloodhound-swagger/
+.old/
+htmlcov/
+.coverage
+*.log
 # mac files
 .DS_Store
 .AppleDouble

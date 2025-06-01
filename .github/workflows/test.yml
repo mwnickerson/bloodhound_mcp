@@ -1,0 +1,78 @@
+# .github/workflows/tests.yml
+name: Tests
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.9, 3.10, 3.11]
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install UV
+      uses: astral-sh/setup-uv@v4
+      with:
+        version: "latest"
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      run: uv python install ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        uv sync
+        uv add --dev pytest pytest-mock pytest-cov requests-mock
+    
+    - name: Run basic tests
+      run: |
+        uv run pytest tests/test_basics.py -v
+    
+    - name: Run HTTP tests
+      run: |
+        uv run pytest tests/test_bloodhound_http.py -v
+    
+    - name: Run MCP tool tests
+      run: |
+        uv run pytest tests/test_mcp_tools.py -v
+    
+    - name: Run all tests with coverage
+      run: |
+        uv run pytest tests/ --cov=lib --cov=main --cov-report=xml --cov-report=term-missing
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install UV
+      uses: astral-sh/setup-uv@v4
+    
+    - name: Set up Python
+      run: uv python install 3.11
+    
+    - name: Install dependencies
+      run: uv sync
+    
+    - name: Check code formatting
+      run: |
+        uv add --dev black isort
+        uv run black --check .
+        uv run isort --check-only .
+    
+    - name: Lint with flake8
+      run: |
+        uv add --dev flake8
+        uv run flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics

@@ -1654,6 +1654,7 @@ class ADCSClient:
         return self.base_client.request("GET", f"/api/v2/aia-cas/{ca_id}/controllers", params=params)
     
 class CypherClient:
+
     """Client for Cypher query related BloodHound API endpoints"""
     
     def __init__(self, base_client: BloodhoundBaseClient):
@@ -1786,6 +1787,7 @@ class CypherClient:
                                       data=data)
     
     def delete_saved_query_permissions(self, query_id: int, 
+                                       
                                      user_ids: List[str]) -> None:
         """
         Revoke saved query permissions from users
@@ -1798,3 +1800,4 @@ class CypherClient:
         self.base_client.request("DELETE", 
                                f"/api/v2/saved-queries/{query_id}/permissions", 
                                data=data)
+        

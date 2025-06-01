@@ -12,3 +12,12 @@ dependencies = [
     "requests>=2.32.3",
     "typing>=3.10.0.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+    "pytest-cov>=6.1.1",
+    "pytest-mock>=3.14.1",
+    "requests-mock>=1.12.1",
+    "responses>=0.25.7",
+]
