@@ -58,9 +58,12 @@ class TestBloodhoundImports:
         If this fails, there's a problem with your bloodhound_api.py file
         """
         # These imports should work if your API client is properly structured
-        from lib.bloodhound_api import (BloodhoundAPI, BloodhoundAuthError,
-                                        BloodhoundBaseClient,
-                                        BloodhoundConnectionError)
+        from lib.bloodhound_api import (
+            BloodhoundAPI,
+            BloodhoundAuthError,
+            BloodhoundBaseClient,
+            BloodhoundConnectionError,
+        )
 
         print("✅ All BloodHound API classes imported successfully")
 
