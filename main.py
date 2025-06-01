@@ -4,13 +4,13 @@ MCP Server for Bloodhound Community Edition
 This server provides an interface between an LLM and the Bloodhound CE data
 """
 
-import os
-import json
 import argparse
-from typing import Dict, List, Any, Optional
-from dotenv import load_dotenv
+import json
 import logging
+import os
+from typing import Any, Dict, List, Optional
 
+from dotenv import load_dotenv
 # Import FastMCP
 from mcp.server.fastmcp import FastMCP
 

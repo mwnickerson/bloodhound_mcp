@@ -1,6 +1,8 @@
-import pytest
-import os
 import json
+import os
+
+import pytest
+
 from lib.bloodhound_api import BloodhoundAPI, BloodhoundConnectionError
 
 # Only run integration tests if explicitly enabled

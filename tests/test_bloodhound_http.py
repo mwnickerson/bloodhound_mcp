@@ -1,14 +1,12 @@
-import pytest
 import json
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 import requests
-from unittest.mock import Mock, patch, MagicMock
-from lib.bloodhound_api import (
-    BloodhoundAPI,
-    BloodhoundBaseClient,
-    BloodhoundAuthError,
-    BloodhoundConnectionError,
-    BloodhoundAPIError,
-)
+
+from lib.bloodhound_api import (BloodhoundAPI, BloodhoundAPIError,
+                                BloodhoundAuthError, BloodhoundBaseClient,
+                                BloodhoundConnectionError)
 
 
 class TestHTTPRequestFormation:

@@ -1,7 +1,9 @@
-import pytest
 import os
 from unittest.mock import patch
-from lib.bloodhound_api import BloodhoundBaseClient, BloodhoundAuthError
+
+import pytest
+
+from lib.bloodhound_api import BloodhoundAuthError, BloodhoundBaseClient
 
 
 class TestAbsoluteBasics:
@@ -56,8 +58,9 @@ class TestBloodhoundImports:
         If this fails, there's a problem with your bloodhound_api.py file
         """
         # These imports should work if your API client is properly structured
-        from lib.bloodhound_api import BloodhoundAPI, BloodhoundBaseClient
-        from lib.bloodhound_api import BloodhoundAuthError, BloodhoundConnectionError
+        from lib.bloodhound_api import (BloodhoundAPI, BloodhoundAuthError,
+                                        BloodhoundBaseClient,
+                                        BloodhoundConnectionError)
 
         print("✅ All BloodHound API classes imported successfully")
 

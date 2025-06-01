@@ -1,8 +1,9 @@
-import pytest
 import json
-import sys
 import os
-from unittest.mock import Mock, patch, MagicMock
+import sys
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 # Add the project root to Python path so we can import main.py
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
