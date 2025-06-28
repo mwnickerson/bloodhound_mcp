@@ -2549,11 +2549,6 @@ async def main():
 
 if __name__ == "__main__":
     import asyncio
-
     parser = argparse.ArgumentParser(description="Bloodhound CE MCP Server")
-    # Add any command line arguments you need
-
     args = parser.parse_args()
-
-    # Start the server
     asyncio.run(main())
