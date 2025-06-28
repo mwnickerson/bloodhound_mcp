@@ -16,25 +16,25 @@ env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
 
-class BlooodhoundError(Exception):
+class BloodhoundError(Exception):
     """Custom exception for BloodHound API errors"""
 
     pass
 
 
-class BloodhoundAuthError(BlooodhoundError):
+class BloodhoundAuthError(BloodhoundError):
     """Custom exception for BloodHound authentication errors"""
 
     pass
 
 
-class BloodhoundConnectionError(BlooodhoundError):
+class BloodhoundConnectionError(BloodhoundError):
     """Custom exception for BloodHound connection errors"""
 
     pass
 
 
-class BloodhoundAPIError(BlooodhoundError):
+class BloodhoundAPIError(BloodhoundError):
     """Custom exception for BloodHound API errors"""
 
     def __init__(self, message: str, response: requests.Response):
@@ -1112,10 +1112,14 @@ class ComputerClient:
         """
         Get a list, graph, or count of the systems this computer can execute DCOM on.
         This is a list of the computers that this computer can impersonate.
+
         Args:
             computer_id: The ID of the computer to query
             limit: Maximum number of DCOM rights to return
-            skip: Number of DCOM rights to skip for pagination""
+            skip: Number of DCOM rights to skip for pagination
+
+        Returns:
+            Dictionary with data (list of DCOM rights) and count (total number)
         """
         params = {"limit": limit, "skip": skip, "type": "list"}
         return self.base_client.request(
@@ -1364,16 +1368,6 @@ class OUsClient:
         )
 
 
-# /api/v2/ous/{ou_id}/ api use
-
-
-# /api/v2/gpos/{gpo_id}/ api use
-
-
-# /api/v2/graphs/cypher api use
-# for custom cypher queries
-
-
 class GPOsClient:
     """Client for GPO related Bloodhound API Endpoints"""
 
@@ -1416,12 +1410,15 @@ class GPOsClient:
         self, gpo_id: str, limit: int = 100, skip: int = 0
     ) -> Dict[str, Any]:
         """
-        Get a list, graph, or count of the Security Prinicipals that can control this GPO.
+        Get a list, graph, or count of the Security Principals that can control this GPO.
 
         Args:
             gpo_id: The ID of the GPO to query
             limit: the maximum number of controller security principals to return (default is 100)
             skip: Number of controller security principals to skip for pagination (Default is 0)
+
+        Returns:
+            Dictionary with data (list of controllers) and count (total number)
         """
         params = {"limit": limit, "skip": skip, "type": "list"}
         return self.base_client.request(
