@@ -1356,37 +1356,282 @@ class TestADCSClient:
 
 
 class TestCypherClient:
-    """Test the CypherClient class"""
+    """Test the enhanced CypherClient class"""
 
     def setup_method(self):
         """Set up test fixtures"""
         self.mock_base_client = Mock()
         self.cypher_client = CypherClient(self.mock_base_client)
 
-    def test_run_query_with_properties(self):
-        """Test run_query with include_properties=True"""
-        self.mock_base_client.request.return_value = {
-            "data": {"nodes": [], "edges": []}
+    @patch('requests.request')
+    def test_run_query_success_with_results(self, mock_request):
+        """Test run_query with successful 200 response"""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "data": {"nodes": [{"id": 1, "name": "test"}], "edges": []}
         }
+        mock_request.return_value = mock_response
+        self.mock_base_client._request = mock_request
         
         result = self.cypher_client.run_query("MATCH (n) RETURN n LIMIT 10", True)
         
-        expected_data = {"query": "MATCH (n) RETURN n LIMIT 10", "includeproperties": True}
+        assert result["success"] is True
+        assert result["data"]["nodes"][0]["name"] == "test"
+        assert result["metadata"]["status"] == "success_with_results"
+        assert result["metadata"]["has_results"] is True
+        assert result["metadata"]["status_code"] == 200
+
+    @patch('requests.request')
+    def test_run_query_success_no_results_404(self, mock_request):
+        """Test run_query with 404 response (no results found)"""
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_request.return_value = mock_response
+        self.mock_base_client._request = mock_request
+        
+        result = self.cypher_client.run_query("MATCH (n:NonExistent) RETURN n", True)
+        
+        assert result["success"] is True
+        assert result["data"]["nodes"] == []
+        assert result["data"]["edges"] == []
+        assert result["metadata"]["status"] == "success_no_results"
+        assert result["metadata"]["has_results"] is False
+        assert result["metadata"]["status_code"] == 404
+        assert "Query executed successfully but found no matching data" in result["metadata"]["message"]
+
+    @patch('requests.request')
+    def test_run_query_syntax_error_400(self, mock_request):
+        """Test run_query with 400 syntax error"""
+        mock_response = Mock()
+        mock_response.status_code = 400
+        mock_response.json.return_value = {"error": "Syntax error near 'INVALID'"}
+        mock_request.return_value = mock_response
+        self.mock_base_client._request = mock_request
+        
+        with pytest.raises(BloodhoundAPIError) as exc_info:
+            self.cypher_client.run_query("INVALID CYPHER QUERY", True)
+        
+        assert "Cypher query syntax error" in str(exc_info.value)
+        assert "Syntax error near 'INVALID'" in str(exc_info.value)
+        assert exc_info.value.status_code == 400
+
+    @patch('requests.request')
+    def test_run_query_auth_error_401(self, mock_request):
+        """Test run_query with 401 authentication error"""
+        mock_response = Mock()
+        mock_response.status_code = 401
+        mock_request.return_value = mock_response
+        self.mock_base_client._request = mock_request
+        
+        with pytest.raises(BloodhoundAPIError) as exc_info:
+            self.cypher_client.run_query("MATCH (n) RETURN n", True)
+        
+        assert "Authentication failed" in str(exc_info.value)
+        assert exc_info.value.status_code == 401
+
+    @patch('requests.request')
+    def test_run_query_permission_error_403(self, mock_request):
+        """Test run_query with 403 permission error"""
+        mock_response = Mock()
+        mock_response.status_code = 403
+        mock_request.return_value = mock_response
+        self.mock_base_client._request = mock_request
+        
+        with pytest.raises(BloodhoundAPIError) as exc_info:
+            self.cypher_client.run_query("MATCH (n) RETURN n", True)
+        
+        assert "Permission denied" in str(exc_info.value)
+        assert exc_info.value.status_code == 403
+
+    @patch('requests.request')
+    def test_run_query_rate_limit_429(self, mock_request):
+        """Test run_query with 429 rate limit error"""
+        mock_response = Mock()
+        mock_response.status_code = 429
+        mock_request.return_value = mock_response
+        self.mock_base_client._request = mock_request
+        
+        with pytest.raises(BloodhoundAPIError) as exc_info:
+            self.cypher_client.run_query("MATCH (n) RETURN n", True)
+        
+        assert "Rate limit exceeded" in str(exc_info.value)
+        assert exc_info.value.status_code == 429
+
+    @patch('requests.request')
+    def test_run_query_server_error_500(self, mock_request):
+        """Test run_query with 500 server error"""
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_response.json.return_value = {"error": "Internal database error"}
+        mock_request.return_value = mock_response
+        self.mock_base_client._request = mock_request
+        
+        with pytest.raises(BloodhoundAPIError) as exc_info:
+            self.cypher_client.run_query("MATCH (n) RETURN n", True)
+        
+        assert "BloodHound server error" in str(exc_info.value)
+        assert "Internal database error" in str(exc_info.value)
+        assert exc_info.value.status_code == 500
+
+    @patch('requests.request')
+    def test_run_query_connection_error(self, mock_request):
+        """Test run_query with connection error"""
+        mock_request.side_effect = requests.exceptions.ConnectionError("Connection failed")
+        self.mock_base_client._request = mock_request
+        
+        with pytest.raises(BloodhoundConnectionError) as exc_info:
+            self.cypher_client.run_query("MATCH (n) RETURN n", True)
+        
+        assert "Failed to connect to BloodHound for Cypher query" in str(exc_info.value)
+
+    @patch('requests.request')
+    def test_run_query_timeout_error(self, mock_request):
+        """Test run_query with timeout error"""
+        mock_request.side_effect = requests.exceptions.Timeout("Request timeout")
+        self.mock_base_client._request = mock_request
+        
+        with pytest.raises(BloodhoundConnectionError) as exc_info:
+            self.cypher_client.run_query("MATCH (n) RETURN n", True)
+        
+        assert "Request timeout during Cypher query" in str(exc_info.value)
+
+    @patch('requests.request')
+    def test_run_query_invalid_json_response(self, mock_request):
+        """Test run_query with invalid JSON response"""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.side_effect = json.JSONDecodeError("Invalid JSON", "", 0)
+        mock_request.return_value = mock_response
+        self.mock_base_client._request = mock_request
+        
+        with pytest.raises(BloodhoundAPIError) as exc_info:
+            self.cypher_client.run_query("MATCH (n) RETURN n", True)
+        
+        assert "Invalid JSON response from Cypher query" in str(exc_info.value)
+
+    @patch('time.sleep')
+    @patch('requests.request')
+    def test_run_query_with_retry_success_after_failure(self, mock_request, mock_sleep):
+        """Test run_query_with_retry succeeds after initial failure"""
+        # First call fails with 500, second succeeds
+        mock_responses = [
+            Mock(status_code=500, json=lambda: {"error": "Temporary error"}),
+            Mock(status_code=200, json=lambda: {"data": {"nodes": [], "edges": []}})
+        ]
+        mock_request.side_effect = mock_responses
+        self.mock_base_client._request = mock_request
+        
+        result = self.cypher_client.run_query_with_retry("MATCH (n) RETURN n", True, max_retries=2)
+        
+        assert result["success"] is True
+        assert mock_request.call_count == 2
+        mock_sleep.assert_called_once_with(1)  # Exponential backoff: 2^0 for first retry
+
+    @patch('time.sleep')
+    @patch('requests.request')
+    def test_run_query_with_retry_rate_limit_handling(self, mock_request, mock_sleep):
+        """Test run_query_with_retry handles rate limiting with longer wait"""
+        # First call fails with 429, second succeeds
+        mock_responses = [
+            Mock(status_code=429),
+            Mock(status_code=200, json=lambda: {"data": {"nodes": [], "edges": []}})
+        ]
+        mock_request.side_effect = mock_responses
+        self.mock_base_client._request = mock_request
+        
+        result = self.cypher_client.run_query_with_retry("MATCH (n) RETURN n", True, max_retries=2)
+        
+        assert result["success"] is True
+        assert mock_request.call_count == 2
+        mock_sleep.assert_called_once_with(10)  # Minimum 10 seconds for rate limiting
+
+    @patch('requests.request')
+    def test_run_query_with_retry_no_retry_on_client_errors(self, mock_request):
+        """Test run_query_with_retry doesn't retry client errors (400, 401, 403)"""
+        mock_response = Mock()
+        mock_response.status_code = 400
+        mock_response.json.return_value = {"error": "Bad syntax"}
+        mock_request.return_value = mock_response
+        self.mock_base_client._request = mock_request
+        
+        with pytest.raises(BloodhoundAPIError):
+            self.cypher_client.run_query_with_retry("BAD QUERY", True, max_retries=3)
+        
+        # Should only be called once (no retries for client errors)
+        assert mock_request.call_count == 1
+
+    def test_validate_query_empty(self):
+        """Test validate_query with empty query"""
+        result = self.cypher_client.validate_query("")
+        
+        assert result["valid"] is False
+        assert result["checks"]["is_empty"] is True
+        assert "Query appears empty" in [w for w in result["warnings"] if w]
+
+    def test_validate_query_valid_simple(self):
+        """Test validate_query with valid simple query"""
+        result = self.cypher_client.validate_query("MATCH (n) RETURN n")
+        
+        assert result["valid"] is True
+        assert result["checks"]["is_empty"] is False
+        assert result["checks"]["has_return"] is True
+        assert result["checks"]["has_match"] is True
+        assert result["checks"]["estimated_complexity"] == "medium"
+
+    def test_validate_query_high_complexity(self):
+        """Test validate_query with high complexity query"""
+        result = self.cypher_client.validate_query("MATCH (n) RETURN * COLLECT(n)")
+        
+        assert result["valid"] is True
+        assert result["checks"]["estimated_complexity"] == "high"
+        assert "Query may have high complexity" in [w for w in result["warnings"] if w]
+
+    def test_get_saved_query(self):
+        """Test get_saved_query method"""
+        self.mock_base_client.request.return_value = {"data": {"id": 123, "name": "Test Query"}}
+        
+        result = self.cypher_client.get_saved_query(123)
+        
+        self.mock_base_client.request.assert_called_once_with("GET", "/api/v2/saved-queries/123")
+
+    def test_create_saved_query_with_description(self):
+        """Test create_saved_query with description parameter"""
+        self.mock_base_client.request.return_value = {"data": {"id": 123}}
+        
+        result = self.cypher_client.create_saved_query(
+            "Test Query", 
+            "MATCH (n) RETURN n", 
+            description="A test query"
+        )
+        
+        expected_data = {
+            "name": "Test Query", 
+            "query": "MATCH (n) RETURN n",
+            "description": "A test query"
+        }
         self.mock_base_client.request.assert_called_once_with(
-            "POST", "/api/v2/graphs/cypher", data=expected_data
+            "POST", "/api/v2/saved-queries", data=expected_data
         )
 
-    def test_run_query_without_properties(self):
-        """Test run_query with include_properties=False"""
-        self.mock_base_client.request.return_value = {
-            "data": {"nodes": [], "edges": []}
+    def test_update_saved_query_with_description(self):
+        """Test update_saved_query with description parameter"""
+        self.mock_base_client.request.return_value = {"data": {"id": 123}}
+        
+        result = self.cypher_client.update_saved_query(
+            123, 
+            name="Updated Name", 
+            query="UPDATED MATCH (n) RETURN n",
+            description="Updated description"
+        )
+        
+        expected_data = {
+            "name": "Updated Name", 
+            "query": "UPDATED MATCH (n) RETURN n",
+            "description": "Updated description"
         }
-        
-        result = self.cypher_client.run_query("MATCH (n) RETURN n LIMIT 10", False)
-        
-        expected_data = {"query": "MATCH (n) RETURN n LIMIT 10", "includeproperties": False}
         self.mock_base_client.request.assert_called_once_with(
-            "POST", "/api/v2/graphs/cypher", data=expected_data
+            "PUT", "/api/v2/saved-queries/123", data=expected_data
         )
 
     def test_list_saved_queries_basic(self):
@@ -1427,8 +1672,8 @@ class TestCypherClient:
             "GET", "/api/v2/saved-queries", params=expected_params
         )
 
-    def test_create_saved_query(self):
-        """Test create_saved_query"""
+    def test_create_saved_query_basic(self):
+        """Test create_saved_query without description"""
         self.mock_base_client.request.return_value = {"data": {"id": 123}}
         
         result = self.cypher_client.create_saved_query("Test Query", "MATCH (n) RETURN n")
@@ -1456,21 +1701,6 @@ class TestCypherClient:
         result = self.cypher_client.update_saved_query(123, query="NEW MATCH (n) RETURN n")
         
         expected_data = {"query": "NEW MATCH (n) RETURN n"}
-        self.mock_base_client.request.assert_called_once_with(
-            "PUT", "/api/v2/saved-queries/123", data=expected_data
-        )
-
-    def test_update_saved_query_both(self):
-        """Test update_saved_query with both name and query"""
-        self.mock_base_client.request.return_value = {"data": {"id": 123}}
-        
-        result = self.cypher_client.update_saved_query(
-            123, 
-            name="Updated Name", 
-            query="UPDATED MATCH (n) RETURN n"
-        )
-        
-        expected_data = {"name": "Updated Name", "query": "UPDATED MATCH (n) RETURN n"}
         self.mock_base_client.request.assert_called_once_with(
             "PUT", "/api/v2/saved-queries/123", data=expected_data
         )
