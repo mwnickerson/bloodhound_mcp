@@ -186,6 +186,185 @@ class TestDomainMCPTools:
         print(f"   Found {result['count']} users")
         print(f"   Service accounts: {len(service_accounts)}")
 
+    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
+    @patch("main.bloodhound_api")
+    def test_run_cypher_query_success_with_results(self, mock_api):
+        """
+        Test the run_cypher_query() MCP tool with successful results
+        """
+        # Setup: Mock the enhanced CypherClient response
+        fake_cypher_result = {
+            "success": True,
+            "data": {
+                "nodes": [
+                    {"id": "123", "type": "User", "name": "admin@test.local"},
+                    {"id": "456", "type": "Group", "name": "Domain Admins"}
+                ],
+                "edges": [
+                    {"source": "123", "target": "456", "type": "MemberOf"}
+                ]
+            },
+            "metadata": {
+                "status": "success_with_results",
+                "query": "MATCH (u:User)-[:MemberOf]->(g:Group) RETURN u, g LIMIT 10",
+                "has_results": True,
+                "status_code": 200
+            }
+        }
+        
+        mock_api.cypher.run_query.return_value = fake_cypher_result
+        
+        # Act: Call the MCP tool function
+        result_json = main.run_cypher_query(
+            "MATCH (u:User)-[:MemberOf]->(g:Group) RETURN u, g LIMIT 10",
+            include_properties=True
+        )
+        
+        # Parse the JSON response
+        result = json.loads(result_json)
+        
+        # Assert: Check that everything works correctly
+        mock_api.cypher.run_query.assert_called_once_with(
+            "MATCH (u:User)-[:MemberOf]->(g:Group) RETURN u, g LIMIT 10",
+            True
+        )
+        
+        # Check the response structure (MCP tool formats it differently)
+        assert result["success"] is True
+        assert "result" in result  # MCP tool uses "result" not "data"
+        assert "metadata" in result
+        assert "query_info" in result
+        assert len(result["result"]["nodes"]) == 2
+        assert len(result["result"]["edges"]) == 1
+        assert result["metadata"]["status"] == "success_with_results"
+        assert result["metadata"]["has_results"] is True
+        assert result["query_info"]["execution_status"] == "success_with_results"
+        assert "Cypher query executed successfully - results found" in result["message"]
+        
+        print("✅ run_cypher_query() MCP tool works with results")
+        print(f"   Found {len(result['result']['nodes'])} nodes and {len(result['result']['edges'])} edges")
+
+    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
+    @patch("main.bloodhound_api")
+    def test_run_cypher_query_success_no_results(self, mock_api):
+        """
+        Test the run_cypher_query() MCP tool with no results (404 response)
+        """
+        # Setup: Mock the enhanced CypherClient 404 response
+        fake_cypher_result = {
+            "success": True,
+            "data": {"nodes": [], "edges": []},
+            "metadata": {
+                "status": "success_no_results",
+                "query": "MATCH (n:NonExistentType) RETURN n",
+                "has_results": False,
+                "status_code": 404,
+                "message": "Query executed successfully but found no matching data"
+            }
+        }
+        
+        mock_api.cypher.run_query.return_value = fake_cypher_result
+        
+        # Act: Call the MCP tool function
+        result_json = main.run_cypher_query("MATCH (n:NonExistentType) RETURN n")
+        result = json.loads(result_json)
+        
+        # Assert: Check that 404 is handled as success
+        assert result["success"] is True
+        assert result["result"]["nodes"] == []
+        assert result["result"]["edges"] == []
+        assert result["metadata"]["status"] == "success_no_results"
+        assert result["metadata"]["has_results"] is False
+        assert result["metadata"]["status_code"] == 404
+        assert result["query_info"]["execution_status"] == "success_no_results"
+        assert "Cypher query executed successfully - no results found" in result["message"]
+        
+        print("✅ run_cypher_query() MCP tool correctly handles 404 as success")
+
+    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
+    @patch("main.bloodhound_api")
+    def test_run_cypher_query_error_handling(self, mock_api):
+        """
+        Test run_cypher_query() error handling when API fails
+        """
+        from lib.bloodhound_api import BloodhoundAPIError
+        
+        # Setup: Make the API raise a syntax error
+        mock_response = Mock()
+        mock_response.status_code = 400
+        mock_api.cypher.run_query.side_effect = BloodhoundAPIError(
+            "Cypher query syntax error: Syntax error near 'INVALID'", 
+            response=mock_response
+        )
+        
+        # Act: Call the MCP tool
+        result_json = main.run_cypher_query("INVALID CYPHER SYNTAX")
+        result = json.loads(result_json)
+        
+        # Assert: Check error handling
+        assert result["success"] is False
+        assert "error" in result
+        assert "Cypher query syntax error" in result["error"]
+        assert result["error_type"] == "syntax_error"
+        assert result["message"] == "Cypher query syntax error"
+        assert "suggestions" in result
+        
+        print("✅ run_cypher_query() error handling works")
+
+    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
+    @patch("main.bloodhound_api")
+    def test_run_cypher_query_connection_error(self, mock_api):
+        """
+        Test run_cypher_query() connection error handling
+        """
+        from lib.bloodhound_api import BloodhoundConnectionError
+        
+        # Setup: Make the API raise a connection error
+        mock_api.cypher.run_query.side_effect = BloodhoundConnectionError(
+            "Failed to connect to BloodHound for Cypher query: Connection refused"
+        )
+        
+        # Act: Call the MCP tool
+        result_json = main.run_cypher_query("MATCH (n) RETURN n LIMIT 1")
+        result = json.loads(result_json)
+        
+        # Assert: Check connection error handling
+        assert result["success"] is False
+        assert "error" in result
+        assert "connection" in result["error"].lower()
+        assert result["error_type"] == "connection_error"
+        assert "suggestions" in result
+        
+        print("✅ run_cypher_query() connection error handling works")
+
+    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
+    @patch("main.bloodhound_api")
+    def test_run_cypher_query_none_status_code_handling(self, mock_api):
+        """
+        Test run_cypher_query() handles BloodhoundAPIError with None status_code
+        
+        This tests the fix for the bug: '>=' not supported between instances of 'NoneType' and 'int'
+        """
+        from lib.bloodhound_api import BloodhoundAPIError
+        
+        # Setup: Make the API raise an error with None status_code
+        mock_api.cypher.run_query.side_effect = BloodhoundAPIError(
+            "Generic API error without status code", 
+            response=None  # This causes status_code to be None
+        )
+        
+        # Act: Call the MCP tool - this should not crash
+        result_json = main.run_cypher_query("MATCH (n) RETURN n")
+        result = json.loads(result_json)
+        
+        # Assert: Check that it handles None status_code gracefully
+        assert result["success"] is False
+        assert result["error_type"] == "unknown_error"
+        assert "Generic API error without status code" in result["error"]
+        assert "HTTP unknown" in result["message"]
+        
+        print("✅ run_cypher_query() handles None status_code without crashing")
+
 
 class TestManualFunctionTesting:
     """

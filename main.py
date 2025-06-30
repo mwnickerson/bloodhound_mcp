@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
 # Import Bloodhound API client
-from lib.bloodhound_api import BloodhoundAPI
+from lib.bloodhound_api import BloodhoundAPI, BloodhoundAPIError, BloodhoundConnectionError
 
 # Set up logging
 logging.basicConfig(
@@ -1934,32 +1934,6 @@ def get_ou_gpos(ou_id: str, limit: int = 100, skip: int = 0):
 
 
 @mcp.tool()
-def get_ou_groups(ou_id: str, limit: int = 100, skip: int = 0):
-    """
-    Retrieves the list of groups contained within the specific Organizational Unit
-    This can be used to identify potential targets for lateral movemner and privilege escalation
-    This can also be used to help identify attack paths
-
-    Args:
-        ou_id: The ID of the OU to query
-        limit: Maximum number of groups to return (default: 100)
-        skip: Number of groups to skip for pagination (default: 0)
-    """
-    try:
-        ou_groups = bloodhound_api.ous.get_groups(ou_id, limit=limit, skip=skip)
-        return json.dumps(
-            {
-                "message": f"Found {ou_groups.get('count', 0)} groups for the OU",
-                "ou_groups": ou_groups.get("data", []),
-                "count": ou_groups.get("count", 0),
-            }
-        )
-    except Exception as e:
-        logger.error(f"Error retrieving OU groups: {e}")
-        return json.dumps({"error": f"Failed to retrieve OU groups: {str(e)}"})
-
-
-@mcp.tool()
 def get_ou_users(ou_id: str, limit: int = 100, skip: int = 0):
     """
     Retrieves the users within a specific OU in the domain.
@@ -2088,7 +2062,7 @@ def get_gpo_ous(gpo_id: str, limit: int = 100, skip: int = 0):
 
 
 @mcp.tool()
-def get_gpo_tier_zeros(gpo_id: str, limit: 100, skip: int = 0):
+def get_gpo_tier_zeros(gpo_id: str, limit: int = 100, skip: int = 0):
     """
     Retrieves the Tier 0 groups that are linked to a specific GPO in the domain.
     Tier 0 groups are the highest privileged groups in the domain and have access to all resources.
@@ -2446,30 +2420,239 @@ def get_aia_ca_controllers(ca_id: str, limit: int = 100, skip: int = 0):
 
 
 # MCP tools for getting the AI to leverage Cypher Queries
+# Enhanced run_cypher_query MCP tool for main.py
+# Replace the existing run_cypher_query function with this version
+
 @mcp.tool()
 def run_cypher_query(query: str, include_properties: bool = True):
     """
     Run a custom Cypher query on the BloodHound Neo4j database.
+    
+    This tool properly interprets BloodHound's HTTP response codes:
+    - 200: Query successful with results
+    - 404: Query successful but no results found (NOT an error!)
+    - 400: Query syntax error
+    - 401/403: Authentication/permission issues
+    - 5xx: Server errors
 
     Args:
         query: The Cypher query to execute
         include_properties: Whether to include node/edge properties in the response
 
     Returns:
-        JSON response with graph data (nodes and edges)
+        JSON response with graph data (nodes and edges) and execution metadata
     """
     try:
+        # Use the enhanced run_query method
         result = bloodhound_api.cypher.run_query(query, include_properties)
-        return json.dumps(
-            {
-                "message": "Cypher query executed successfully",
-                "result": result.get("data", {}),
-            }
-        )
+        
+        # Check if query found results or not
+        if result["metadata"]["has_results"]:
+            return json.dumps({
+                "success": True,
+                "message": "Cypher query executed successfully - results found",
+                "result": result["data"],
+                "metadata": result["metadata"],
+                "query_info": {
+                    "query": query,
+                    "execution_status": "success_with_results",
+                    "result_count": {
+                        "nodes": len(result["data"].get("nodes", [])),
+                        "edges": len(result["data"].get("edges", []))
+                    }
+                }
+            })
+        else:
+            # Query was successful but found no results
+            return json.dumps({
+                "success": True, 
+                "message": "Cypher query executed successfully - no results found",
+                "result": result["data"],
+                "metadata": result["metadata"],
+                "query_info": {
+                    "query": query,
+                    "execution_status": "success_no_results", 
+                    "interpretation": "This may indicate: 1) No attack paths exist, 2) No objects match the criteria, 3) The environment doesn't have the queried objects"
+                }
+            })
+            
+    except BloodhoundAPIError as e:
+        # Handle different types of API errors appropriately
+        if e.status_code == 400:
+            return json.dumps({
+                "success": False,
+                "error_type": "syntax_error",
+                "message": "Cypher query syntax error",
+                "error": str(e),
+                "query": query,
+                "suggestions": [
+                    "Check node labels (User, Computer, Group, Domain, AZUser, etc.)",
+                    "Verify relationship types (MemberOf, AdminTo, HasSession, etc.)",
+                    "Ensure property names are correct (.name, .enabled, .owned, etc.)",
+                    "Use get_bloodhound_schema() to see available options",
+                    "Try validate_cypher_query() first to check syntax"
+                ]
+            })
+        
+        elif e.status_code is not None and e.status_code in [401, 403]:
+            return json.dumps({
+                "success": False,
+                "error_type": "authentication_error", 
+                "message": "Authentication or permission error",
+                "error": str(e),
+                "suggestions": [
+                    "Check your BloodHound API credentials",
+                    "Verify your user has Cypher query permissions",
+                    "Ensure your API token hasn't expired"
+                ]
+            })
+        
+        elif e.status_code is not None and e.status_code >= 500:
+            return json.dumps({
+                "success": False,
+                "error_type": "server_error",
+                "message": "BloodHound server error", 
+                "error": str(e),
+                "suggestions": [
+                    "Check if BloodHound server is running",
+                    "Try a simpler query to test connectivity",
+                    "Check BloodHound server logs for details"
+                ]
+            })
+        
+        else:
+            return json.dumps({
+                "success": False,
+                "error_type": "unknown_error",
+                "message": f"Unexpected API error (HTTP {e.status_code if e.status_code is not None else 'unknown'})",
+                "error": str(e),
+                "query": query
+            })
+    
+    except BloodhoundConnectionError as e:
+        return json.dumps({
+            "success": False,
+            "error_type": "connection_error",
+            "message": "Failed to connect to BloodHound server",
+            "error": str(e),
+            "suggestions": [
+                "Check if BloodHound server is running",
+                "Verify network connectivity", 
+                "Check your BLOODHOUND_DOMAIN environment variable"
+            ]
+        })
+    
     except Exception as e:
-        logger.error(f"Error executing Cypher query: {e}")
-        return json.dumps({"error": f"Failed to execute Cypher query: {str(e)}"})
+        logger.error(f"Unexpected error executing Cypher query: {e}")
+        return json.dumps({
+            "success": False,
+            "error_type": "unexpected_error", 
+            "message": "Unexpected error executing Cypher query",
+            "error": str(e),
+            "query": query
+        })
 
+
+# Add a new tool for checking query execution status
+@mcp.tool()
+def interpret_cypher_result(query: str, result_json: str):
+    """
+    Help interpret the results of a Cypher query for offensive security analysis.
+    
+    Args:
+        query: The original Cypher query that was executed
+        result_json: The JSON result from run_cypher_query
+        
+    Returns:
+        Human-readable interpretation of what the results mean for security analysis
+    """
+    try:
+        result = json.loads(result_json) if isinstance(result_json, str) else result_json
+        
+        if not result.get("success", False):
+            return json.dumps({
+                "interpretation": "Query failed to execute",
+                "error_analysis": result.get("error", "Unknown error"),
+                "recommendations": result.get("suggestions", [])
+            })
+        
+        query_lower = query.lower()
+        result_data = result.get("result", {})
+        nodes = result_data.get("nodes", [])
+        edges = result_data.get("edges", []) 
+        
+        interpretations = []
+        
+        if "domain admin" in query_lower:
+            if nodes:
+                interpretations.append(f"Found {len(nodes)} objects related to Domain Admins")
+                interpretations.append("These represent potential high-value targets or current administrators")
+            else:
+                interpretations.append("No Domain Admin relationships found")
+                interpretations.append("This could mean: 1) No standard DA group exists, 2) No users are currently DAs, 3) Different naming convention used")
+        
+        elif "kerberoast" in query_lower or "hasspn" in query_lower:
+            if nodes:
+                spn_users = [n for n in nodes if n.get("hasspn") == True]
+                interpretations.append(f"Found {len(spn_users)} Kerberoastable service accounts")
+                interpretations.append("These accounts can be targeted for credential extraction via Kerberoasting")
+            else:
+                interpretations.append("No Kerberoastable accounts found")
+                interpretations.append("Environment may not have service accounts with SPNs")
+        
+        elif "owned" in query_lower:
+            if nodes:
+                owned_objects = [n for n in nodes if n.get("owned") == True]
+                interpretations.append(f"Found {len(owned_objects)} compromised objects")
+                interpretations.append("These represent your current foothold in the environment")
+            else:
+                interpretations.append("No owned objects marked in BloodHound")
+                interpretations.append("Mark compromised accounts as 'owned' to see attack paths")
+        
+        elif "shortestpath" in query_lower:
+            if edges:
+                interpretations.append(f"Found attack path with {len(edges)} steps")
+                interpretations.append("This represents a potential escalation route")
+            else:
+                interpretations.append("No attack path found between specified objects")
+                interpretations.append("May need to compromise intermediate objects first")
+        
+        elif any(azure_term in query_lower for azure_term in ["azure", "azuser", "azglobal"]):
+            if nodes:
+                interpretations.append(f"Found {len(nodes)} Azure/Entra ID objects")
+                interpretations.append("Focus on privileged roles and service principals")
+            else:
+                interpretations.append("No Azure objects found")
+                interpretations.append("Environment may be on-premises only or data not collected")
+        
+        else:
+            if nodes:
+                interpretations.append(f"Query returned {len(nodes)} nodes and {len(edges)} relationships")
+                interpretations.append("Review the objects for potential security impact")
+            else:
+                interpretations.append("Query found no matching objects")
+        
+        return json.dumps({
+            "query_type": "offensive_security_analysis",
+            "interpretation": interpretations,
+            "tactical_recommendations": [
+                "Review high-value objects first",
+                "Look for attack paths to privileged accounts", 
+                "Check for misconfigurations or excessive permissions",
+                "Mark newly compromised objects as 'owned'"
+            ],
+            "data_summary": {
+                "nodes_found": len(nodes),
+                "relationships_found": len(edges),
+                "has_results": len(nodes) > 0 or len(edges) > 0
+            }
+        })
+        
+    except Exception as e:
+        return json.dumps({
+            "error": f"Failed to interpret result: {str(e)}",
+            "recommendation": "Check the result format and try again"
+        })
 
 # Create saved query management tools
 @mcp.tool()
