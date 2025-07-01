@@ -360,7 +360,7 @@ class TestOffensiveSecurityHTTPScenarios:
     Test HTTP scenarios specific to offensive security analysis
     """
 
-    @patch.object(BloodhoundBaseClient, "request")
+    @patch.object(BloodhoundBaseClient, "_request")
     def test_cypher_query_execution(self, mock_request):
         """
         Test executing Cypher queries (key for custom analysis)
@@ -379,7 +379,11 @@ class TestOffensiveSecurityHTTPScenarios:
             }
         }
 
-        mock_request.return_value = fake_cypher_results
+        # Create a mock response object
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = fake_cypher_results
+        mock_request.return_value = mock_response
 
         # Act: Execute a Cypher query
         api = BloodhoundAPI(
@@ -389,14 +393,17 @@ class TestOffensiveSecurityHTTPScenarios:
         query = 'MATCH (g:Group) WHERE g.name =~ "(?i).*domain admins.*" RETURN g'
         result = api.cypher.run_query(query, include_properties=True)
 
-        # Assert: Check the API call
+        # Assert: Check the API call (with bytes body parameter)
+        expected_data = {"query": query, "includeproperties": True}
         mock_request.assert_called_once_with(
             "POST",
             "/api/v2/graphs/cypher",
-            data={"query": query, "includeproperties": True},
+            json.dumps(expected_data).encode("utf8")
         )
 
-        assert result == fake_cypher_results
+        # Verify the result structure
+        assert result["success"] == True
+        assert result["data"] == fake_cypher_results["data"]
         assert len(result["data"]["nodes"]) == 1
         assert "DOMAIN ADMINS" in result["data"]["nodes"][0]["name"]
 
