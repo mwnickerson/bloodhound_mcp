@@ -2453,19 +2453,36 @@ def run_cypher_query(query: str, include_properties: bool = True):
         # Use the enhanced run_query method
         result = bloodhound_api.cypher.run_query(query, include_properties)
         
+        # Handle different result structures (for backward compatibility)
+        if isinstance(result, dict) and "metadata" in result:
+            # New format with metadata
+            has_results = result["metadata"].get("has_results", True)
+            result_data = result.get("data", result)
+            metadata = result["metadata"]
+        else:
+            # Legacy format or direct data
+            result_data = result
+            has_results = bool(result_data.get("nodes") or result_data.get("edges"))
+            metadata = {
+                "status": "success_with_results" if has_results else "success_no_results",
+                "query": query,
+                "has_results": has_results,
+                "status_code": 200
+            }
+        
         # Check if query found results or not
-        if result["metadata"]["has_results"]:
+        if has_results:
             return json.dumps({
                 "success": True,
                 "message": "Cypher query executed successfully - results found",
-                "result": result["data"],
-                "metadata": result["metadata"],
+                "result": result_data,
+                "metadata": metadata,
                 "query_info": {
                     "query": query,
                     "execution_status": "success_with_results",
                     "result_count": {
-                        "nodes": len(result["data"].get("nodes", [])),
-                        "edges": len(result["data"].get("edges", []))
+                        "nodes": len(result_data.get("nodes", [])),
+                        "edges": len(result_data.get("edges", []))
                     }
                 }
             })
@@ -2474,8 +2491,8 @@ def run_cypher_query(query: str, include_properties: bool = True):
             return json.dumps({
                 "success": True, 
                 "message": "Cypher query executed successfully - no results found",
-                "result": result["data"],
-                "metadata": result["metadata"],
+                "result": result_data,
+                "metadata": metadata,
                 "query_info": {
                     "query": query,
                     "execution_status": "success_no_results", 
@@ -2555,7 +2572,7 @@ def run_cypher_query(query: str, include_properties: bool = True):
             "success": False,
             "error_type": "unexpected_error", 
             "message": "Unexpected error executing Cypher query",
-            "error": str(e),
+            "error": f"Failed to execute Cypher query: {str(e)}",
             "query": query
         })
 
