@@ -5,6 +5,7 @@ description = "MCP for Connecting Claude Desktop to Bloodhound CE"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "aiohttp>=3.12.13",
     "argparse>=1.4.0",
     "dotenv>=0.9.9",
     "fastmcp>=2.9.2",
