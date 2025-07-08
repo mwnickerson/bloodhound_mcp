@@ -8,31 +8,26 @@ async def test_all_mcp_features():
         # Test basic connectivity
         await client.ping()
         print(" MCP server responding")
-        
-        # Test tools
+
+        # Tools
         tools = await client.list_tools()
-        print(f" Found {len(tools)} tools")
-        
-        # Test resources
+        print("Total number of tools:", len(tools))
+
+        # Resources
         resources = await client.list_resources()
-        print(f" Found {len(resources)} resources")
-        for resource in resources:
-            content = await client.read_resource(resource)
-            print(f"  - {resource}: {len(content)} chars")
-        
-        # Test prompts
+        print("Total number of resources:", len(resources))
+
+        # Prompts
         prompts = await client.list_prompts()
-        print(f" Found {len(prompts)} prompts")
-        for prompt_name in prompts:
-            prompt = await client.get_prompt(prompt_name)
-            print(f"  - {prompt_name}: {len(prompt.content)} chars")
+        print("Total number of prompts:", len(prompts))
         
-        # Test actual BloodHound tools
+        # tool test
         try:
             domains = await client.call_tool("get_domains")
-            print(" BloodHound connection working")
+            print("BloodHound Server Connection Working")
+            print("Domains:", domains)
         except Exception as e:
-            print(f" BloodHound issue: {e}")
+            print(f"BloodHound Server Connection Failed: {e}")
 
 if __name__ == "__main__":
     asyncio.run(test_all_mcp_features())

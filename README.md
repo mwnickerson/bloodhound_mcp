@@ -228,3 +228,7 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 - **@jlowin** for [FastMCP](https://github.com/jlowin/fastmcp)
 - **@xpn** for MCP inspiration through the Mythic MCP project
 
+
+
+## TODO
+- [ ] Write better model evaluations (possibly look into using strikes from Dreadnode)

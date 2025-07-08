@@ -23,6 +23,7 @@ bloodhound-swagger/
 htmlcov/
 .coverage
 *.log
+evaluation_results/
 # mac files
 .DS_Store
 .AppleDouble
