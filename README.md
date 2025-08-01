@@ -2,14 +2,14 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-A Model Context Protocol (MCP) server that enables Large Language Models to interact with BloodHound Community Edition data through Claude Desktop. This tool allows security professionals to query and analyze Active Directory attack paths using natural language.
+A Model Context Protocol (MCP) server that enables Large Language Models to interact with BloodHound Community Edition data through Claude Desktop. This tool allows security professionals to query and analyze Active Directory attack paths using natural language. This is currently in the state where it works with Claude Desktop by default.
 
 ## Architecture
 
 This MCP server provides a comprehensive interface to **BloodHound Community Edition's REST API**, not just a wrapper around Cypher queries. The implementation includes:
 
 ### API Coverage
-- **Complete REST API Integration**: Utilizes BloodHound CE's full REST API endpoints (`/api/v2/domains`, `/api/v2/users`, `/api/v2/groups`, etc.)
+- **BloodHound REST API Integration**: Utilizes BloodHound CE's REST API endpoints (`/api/v2/domains`, `/api/v2/users`, `/api/v2/groups`, etc.) most relevant to an operators use case. The management apis have been left out as i still dont feel comfortable giving an LLM access to management of BloodHound
 - **Structured Data Access**: Leverages purpose-built API endpoints for users, computers, groups, OUs, and GPOs
 - **Advanced Functionality**: Includes ADCS analysis, graph search, shortest path algorithms, and edge composition analysis
 - **Authentication**: Implements BloodHound's signature-based authentication system
@@ -59,6 +59,12 @@ As a proper Model Context Protocol implementation:
 - Cross-domain relationship analysis
 - Kerberoasting target identification
 - Administrative relationship mapping
+
+### OpenGraph Usage
+OpenGraph is a new feature to BloodHound 8.0. It gives users the power to expand BloodHound beyond standard AD and Azure AD.
+For more information on OpenGraph please see the below resources
+ - [Awesome Blogpost on the new feature](https://specterops.io/blog/2025/07/29/bloodhound-v8-usability-extensibility-and-opengraph/)
+ - [Documentation](https://bloodhound.specterops.io/opengraph/overview)
 
 ## Prerequisites
 
@@ -181,7 +187,11 @@ This tool processes BloodHound data through Claude Desktop, which means Active D
 - Use isolated lab environments
 - Sanitize data before analysis
 - Consider local LLM alternatives for sensitive environments
+  - there are projects coming out that allow for the connecting of MCPs to local llms
 - Regular token rotation for BloodHound API access
+
+# A note on Local LLM Support
+Initially I was planning to allow for this to connect to Local LLMs, however during this process the research and testing has led me in another direction. This direction requires a lot more time and energy that takes away from building a connector for Ollama or other Local LLM support. There are a lot of projects coming out (that I have not tested with this) that can serve as a bridge. Therefore I do not plan on directly making this project work with local LLMs for the time being (this may be something i explore in the future). Hopefully the next evolution of this project will be seen as a worthwhile investment of my time and energy!
 
 ## Testing
 
