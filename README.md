@@ -46,7 +46,7 @@ As a proper Model Context Protocol implementation:
 - **Certificate Services**: Investigate ADCS infrastructure and certificate templates
 - **Custom Cypher Queries**: Execute advanced Neo4j queries for complex analysis
 - **Graph Search**: Find shortest paths between security principals
-- **Asset Grouping**: Group assets together
+- **Asset Grouping**: Group assets together (Tier Zero, Owned, custom groupings)
 - **Data Quality**: Get more information on the data quality in BloodHound
 - **OpenGraph Support**: CRUD Operations on Custom Nodes to support the newest version of BloodHound!
     - *Requires* BloodHound 8.0 or greater 
