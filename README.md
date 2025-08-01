@@ -32,7 +32,7 @@ As a proper Model Context Protocol implementation:
 
 ## Demo
 
-[Watch the demonstration video](https://youtu.be/eZBT0Iw9CMA)
+[Watch the demonstration video](https://youtu.be/eZBT0Iw9CMA) - Outdated will update with a new one at some point
 
 ## Features
 
@@ -46,6 +46,11 @@ As a proper Model Context Protocol implementation:
 - **Certificate Services**: Investigate ADCS infrastructure and certificate templates
 - **Custom Cypher Queries**: Execute advanced Neo4j queries for complex analysis
 - **Graph Search**: Find shortest paths between security principals
+- **Asset Grouping**: Group assets together
+- **Data Quality**: Get more information on the data quality in BloodHound
+- **OpenGraph Support**: CRUD Operations on Custom Nodes to support the newest version of BloodHound!
+    - *Requires* BloodHound 8.0 or greater 
+    - This is just implemented and has not been througohly tested
 
 ### Advanced Features
 - Natural language querying of BloodHound data
