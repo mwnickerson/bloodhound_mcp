@@ -178,6 +178,393 @@ Active Directory:
     return patterns
 
 
+@mcp.resource("bloodhound://custom-nodes/opengraph-guide")
+def custom_nodes_opengraph_guide() -> str:
+    """Provides comprehensive guidance for working with BloodHound custom nodes and OpenGraph"""
+    guide = """
+BloodHound Custom Nodes & OpenGraph Guide
+=========================================
+
+Overview:
+--------
+Custom nodes in BloodHound represent objects outside of standard Active Directory and Azure types.
+They use the OpenGraph framework to extend BloodHound's graph model with custom entities and relationships.
+
+Key Concepts:
+------------
+1. Custom Node Types: User-defined node categories (e.g., SQLServer, WebApp, NetworkDevice)
+2. OpenGraph Schema: JSON structure defining nodes and edges for ingestion
+3. Visual Configuration: Icons and colors for custom node display
+4. Relationships: Directed edges connecting custom nodes to existing AD/Azure objects
+
+Best Practices:
+--------------
+1. Universally Unique Identifiers:
+   - Every node must have a unique identifier
+   - Use GUIDs, SIDs, certificate thumbprints, or similar
+   - Avoid simple names that could collide
+
+2. Node and Edge Design:
+   - Every edge must be directed and one-way
+   - Edge direction should match "access or attack" flow
+   - Create paths connecting non-adjacent nodes
+   - Think "map of one-way streets" for graph traversal
+
+3. Design Philosophy:
+   - "Begin with the end in mind" - understand your attack path goals
+   - Ensure your model supports effective path discovery
+   - If not creating multi-node paths, consider using a relational database instead
+
+Icon Configuration:
+------------------
+- Use Font Awesome free, solid icons only
+- Specify icon name without 'fa-' prefix (e.g., "database" not "fa-database")
+- Colors in #RGB or #RRGGBB format
+- Example:
+  {
+    "icon": {
+      "type": "font-awesome",
+      "name": "database", 
+      "color": "#FF0000"
+    }
+  }
+
+OpenGraph Schema Structure:
+--------------------------
+Minimal JSON structure for data ingestion:
+{
+  "graph": {
+    "nodes": [
+      {
+        "id": "unique-identifier",
+        "kinds": ["CustomNodeType", "Base"],
+        "properties": {
+          "name": "Object Name",
+          "custom_property": "value"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "kind": "CustomRelationship",
+        "start": {"value": "source-node-id"},
+        "end": {"value": "target-node-id"},
+        "properties": {
+          "weight": 1
+        }
+      }
+    ]
+  }
+}
+
+Node Properties Rules:
+---------------------
+- Properties must be primitive types (strings, numbers, booleans)
+- Arrays must be homogeneous (all elements same type)
+- No nested objects allowed
+- First 'kind' determines visual representation
+
+Common Custom Node Examples:
+---------------------------
+1. Database Servers:
+   - SQLServer, MySQL, PostgreSQL nodes
+   - Relationships: AdminTo, ConnectsTo, ReadFrom
+
+2. Network Infrastructure:
+   - Router, Switch, Firewall nodes  
+   - Relationships: Routes, Filters, Connects
+
+3. Applications:
+   - WebApp, Service, API nodes
+   - Relationships: Authenticates, Authorizes, Accesses
+
+4. Security Appliances:
+   - SIEM, EDR, Proxy nodes
+   - Relationships: Monitors, Blocks, Logs
+
+Integration with Existing BloodHound:
+------------------------------------
+- Custom nodes can have relationships to/from AD users, computers, groups
+- Use standard BloodHound relationship types where applicable
+- Create new relationship types for custom scenarios
+- Maintain consistency with BloodHound's attack path methodology
+
+Example: SQL Server Integration
+------------------------------
+1. Create SQLServer custom node type with database icon
+2. Define relationships:
+   - User -[SQLAdmin]-> SQLServer
+   - SQLServer -[ConnectsTo]-> Database
+   - SQLServer -[RunsAs]-> ServiceAccount
+3. This enables attack paths: User -> SQLServer -> ServiceAccount -> Domain
+
+Validation and Testing:
+----------------------
+- Always validate icon configurations before creation
+- Test data ingestion with small samples first
+- Verify attack paths work as expected in BloodHound UI
+- Check that custom nodes integrate properly with existing data
+
+Common Pitfalls to Avoid:
+------------------------
+- Don't create isolated nodes without relationships
+- Avoid complex nested properties (use separate nodes instead)
+- Don't duplicate existing BloodHound functionality
+- Ensure custom relationships have clear security implications
+- Don't create one-to-one mappings (better suited for relational DBs)
+
+MSSQLHound Example:
+------------------
+Reference implementation showing:
+- Server-level and database-level objects
+- Rich permission metadata
+- Complex relationship hierarchies
+- Practical attack path scenarios
+
+Use MSSQLHound as a template for creating similar custom node implementations
+for other technologies and environments.
+"""
+    return guide
+
+
+@mcp.resource("bloodhound://custom-nodes/examples")
+def custom_nodes_examples() -> str:
+    """Provides practical examples of custom node implementations"""
+    examples = """
+BloodHound Custom Nodes Implementation Examples
+==============================================
+
+1. SQL Server Environment
+-------------------------
+Custom Node Types:
+- MSSQL_Server: SQL Server instance
+- MSSQL_Database: Individual database
+- MSSQL_Login: Server-level login
+- MSSQL_User: Database-level user
+
+Icon Configuration:
+{
+  "MSSQL_Server": {
+    "icon": {
+      "type": "font-awesome",
+      "name": "server",
+      "color": "#CC2936"
+    }
+  },
+  "MSSQL_Database": {
+    "icon": {
+      "type": "font-awesome", 
+      "name": "database",
+      "color": "#4472C4"
+    }
+  }
+}
+
+Example Relationships:
+- User -[SQLAdmin]-> MSSQL_Server
+- MSSQL_Server -[Contains]-> MSSQL_Database
+- MSSQL_Login -[CanAuth]-> MSSQL_Server
+
+2. Web Application Stack
+-----------------------
+Custom Node Types:
+- WebApp: Web application
+- WebServer: Web server (IIS, Apache)
+- AppPool: Application pool
+- WebSite: IIS website
+
+Icon Configuration:
+{
+  "WebApp": {
+    "icon": {
+      "type": "font-awesome",
+      "name": "globe",
+      "color": "#00B04F"
+    }
+  },
+  "WebServer": {
+    "icon": {
+      "type": "font-awesome",
+      "name": "server",
+      "color": "#FF6600"
+    }
+  }
+}
+
+Example Relationships:
+- WebApp -[RunsOn]-> WebServer
+- WebServer -[RunsAs]-> ServiceAccount
+- User -[WebAdmin]-> WebApp
+
+3. Network Infrastructure
+-------------------------
+Custom Node Types:
+- NetworkDevice: Routers, switches, firewalls
+- VLAN: Virtual LAN segments
+- NetworkSegment: Network subnets
+
+Icon Configuration:
+{
+  "NetworkDevice": {
+    "icon": {
+      "type": "font-awesome",
+      "name": "network-wired",
+      "color": "#8B4513"
+    }
+  },
+  "VLAN": {
+    "icon": {
+      "type": "font-awesome",
+      "name": "project-diagram", 
+      "color": "#9932CC"
+    }
+  }
+}
+
+Example Relationships:
+- NetworkDevice -[Routes]-> NetworkSegment
+- Computer -[MemberOf]-> VLAN
+- User -[NetworkAdmin]-> NetworkDevice
+
+4. Cloud Resources (AWS/GCP)
+----------------------------
+Custom Node Types:
+- CloudInstance: VM instances
+- CloudRole: IAM roles
+- CloudBucket: Storage buckets
+- CloudFunction: Serverless functions
+
+Icon Configuration:
+{
+  "CloudInstance": {
+    "icon": {
+      "type": "font-awesome",
+      "name": "cloud",
+      "color": "#FF9900"
+    }
+  },
+  "CloudRole": {
+    "icon": {
+      "type": "font-awesome",
+      "name": "user-tag",
+      "color": "#232F3E"
+    }
+  }
+}
+
+Example OpenGraph Schema:
+{
+  "graph": {
+    "nodes": [
+      {
+        "id": "i-1234567890abcdef0",
+        "kinds": ["CloudInstance", "Base"],
+        "properties": {
+          "name": "web-server-01",
+          "instance_type": "t3.medium",
+          "region": "us-east-1",
+          "status": "running"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "kind": "AssumeRole",
+        "start": {"value": "user-id"},
+        "end": {"value": "role-arn"}
+      }
+    ]
+  }
+}
+
+5. Security Tools Integration
+----------------------------
+Custom Node Types:
+- SIEM: Security information and event management
+- EDR: Endpoint detection and response
+- Vulnerability: Security vulnerabilities
+- SecurityControl: Security controls/policies
+
+Icon Configuration:
+{
+  "SIEM": {
+    "icon": {
+      "type": "font-awesome",
+      "name": "shield-alt",
+      "color": "#DC143C"
+    }
+  },
+  "Vulnerability": {
+    "icon": {
+      "type": "font-awesome",
+      "name": "exclamation-triangle",
+      "color": "#FF4500"
+    }
+  }
+}
+
+Attack Path Examples:
+- User -[HasVulnerability]-> Vulnerability -[AffectsService]-> Service
+- Computer -[MonitoredBy]-> EDR -[ReportsTo]-> SIEM
+
+Complete Example: Custom Node Creation
+-------------------------------------
+Step 1: Define custom types
+custom_types = {
+  "SQLServer": {
+    "icon": {
+      "type": "font-awesome",
+      "name": "database",
+      "color": "#CC2936"
+    }
+  },
+  "WebApp": {
+    "icon": {
+      "type": "font-awesome", 
+      "name": "globe",
+      "color": "#00B04F"
+    }
+  }
+}
+
+Step 2: Create nodes via API
+POST /api/v2/custom-nodes
+{
+  "custom_types": custom_types
+}
+
+Step 3: Prepare OpenGraph data
+opengraph_data = {
+  "graph": {
+    "nodes": [
+      {
+        "id": "sql01.company.com",
+        "kinds": ["SQLServer", "Base"],
+        "properties": {
+          "name": "SQL01",
+          "version": "SQL Server 2019",
+          "instance": "MSSQLSERVER"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "kind": "SQLAdmin",
+        "start": {"value": "user-admin-id"},
+        "end": {"value": "sql01.company.com"}
+      }
+    ]
+  }
+}
+
+Step 4: Ingest data through BloodHound's data ingestion API
+
+This creates attack paths showing how users can compromise SQL servers
+and potentially pivot to other systems in the environment.
+"""
+    return examples
+
+
 # Define prompts
 @mcp.prompt()
 def bloodhound_assistant() -> str:
@@ -297,6 +684,36 @@ def bloodhound_assistant() -> str:
     1. BloodHound uses specific node labels for different object types:
     - Active Directory: User, Computer, Group, Domain, OU, GPO
     - Azure: AZUser, AZGroup, AZApp, AZServicePrincipal, AZTenant
+    - Custom Nodes: User-defined types like SQLServer, WebApp, NetworkDevice (via OpenGraph)
+
+    You have comprehensive capabilities for managing BloodHound data quality, custom nodes, and asset groups:
+
+    Data Quality Management:
+    - Monitor database completeness statistics
+    - Track data quality metrics over time for AD domains and Azure tenants
+    - Analyze platform-wide data quality trends
+    - Identify gaps in data collection coverage
+
+    Custom Nodes & OpenGraph:
+    - Create and manage custom node types for objects outside AD/Azure
+    - Configure visual display (icons and colors) for custom nodes
+    - Validate icon configurations before deployment
+    - Examples: SQL servers, web applications, network devices, cloud resources
+    - Integrate custom nodes with existing BloodHound attack path analysis
+    - Follow OpenGraph best practices for schema design and relationships
+
+    Asset Groups Management:
+    - Create and organize asset isolation groups for security analysis
+    - Define selectors to automatically group assets based on criteria
+    - Track asset group membership and changes over time
+    - Use both legacy asset groups and newer asset group tags APIs
+    - Monitor member counts and statistics by object type
+
+    These capabilities enable you to:
+    1. Extend BloodHound beyond standard AD/Azure to include custom infrastructure
+    2. Monitor and improve data collection quality
+    3. Organize assets for targeted security analysis and risk assessment
+    4. Create comprehensive attack path models including non-AD/Azure components
 
     2. Relationship names are specific to BloodHound's data model:
     - For Azure admins, use :AZGlobalAdmin, not :AZHasRole
@@ -2726,6 +3143,666 @@ def list_saved_queries(skip: int = 0, limit: int = 100, name: str = None):
     except Exception as e:
         logger.error(f"Error listing saved queries: {e}")
         return json.dumps({"error": f"Failed to list saved queries: {str(e)}"})
+
+
+# ===============================
+# DATA QUALITY API TOOLS
+# ===============================
+
+@mcp.tool()
+def get_data_completeness_stats():
+    """
+    Get database completeness statistics showing the percentage of local admins 
+    and sessions collected across the BloodHound database.
+    
+    This is useful for understanding data quality and collection coverage.
+    
+    Returns:
+        JSON response with completeness statistics
+    """
+    try:
+        stats = bloodhound_api.data_quality.get_completeness_stats()
+        return json.dumps({
+            "message": "Successfully retrieved database completeness statistics",
+            "completeness_stats": stats.get("data", {}),
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving completeness stats: {e}")
+        return json.dumps({"error": f"Failed to retrieve completeness stats: {str(e)}"})
+
+
+@mcp.tool()
+def get_ad_domain_data_quality_stats(
+    domain_id: str, 
+    start: str = None, 
+    end: str = None, 
+    sort_by: str = None,
+    skip: int = 0, 
+    limit: int = 100
+):
+    """
+    Get data quality statistics for a specific Active Directory domain.
+    Provides time series data showing collection quality over time.
+    
+    Args:
+        domain_id: The ID of the AD domain to query
+        start: Beginning datetime in RFC-3339 format (optional)
+        end: Ending datetime in RFC-3339 format (optional)
+        sort_by: Sort by field - 'created_at' or 'updated_at' (optional)
+        skip: Number of results to skip for pagination
+        limit: Maximum number of results to return
+        
+    Returns:
+        JSON response with AD domain data quality statistics
+    """
+    try:
+        stats = bloodhound_api.data_quality.get_ad_domain_data_quality_stats(
+            domain_id, start, end, sort_by, skip, limit
+        )
+        return json.dumps({
+            "message": f"Successfully retrieved AD domain data quality stats for domain: {domain_id}",
+            "domain_id": domain_id,
+            "data_quality_stats": stats.get("data", []),
+            "count": stats.get("count", 0),
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving AD domain data quality stats: {e}")
+        return json.dumps({"error": f"Failed to retrieve AD domain data quality stats: {str(e)}"})
+
+
+@mcp.tool()
+def get_azure_tenant_data_quality_stats(
+    tenant_id: str, 
+    start: str = None, 
+    end: str = None, 
+    sort_by: str = None,
+    skip: int = 0, 
+    limit: int = 100
+):
+    """
+    Get data quality statistics for a specific Azure tenant.
+    Provides time series data showing collection quality over time.
+    
+    Args:
+        tenant_id: The ID of the Azure tenant to query
+        start: Beginning datetime in RFC-3339 format (optional)
+        end: Ending datetime in RFC-3339 format (optional)
+        sort_by: Sort by field - 'created_at' or 'updated_at' (optional)
+        skip: Number of results to skip for pagination
+        limit: Maximum number of results to return
+        
+    Returns:
+        JSON response with Azure tenant data quality statistics
+    """
+    try:
+        stats = bloodhound_api.data_quality.get_azure_tenant_data_quality_stats(
+            tenant_id, start, end, sort_by, skip, limit
+        )
+        return json.dumps({
+            "message": f"Successfully retrieved Azure tenant data quality stats for tenant: {tenant_id}",
+            "tenant_id": tenant_id,
+            "data_quality_stats": stats.get("data", []),
+            "count": stats.get("count", 0),
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving Azure tenant data quality stats: {e}")
+        return json.dumps({"error": f"Failed to retrieve Azure tenant data quality stats: {str(e)}"})
+
+
+@mcp.tool()
+def get_platform_data_quality_stats(
+    platform_id: str, 
+    start: str = None, 
+    end: str = None, 
+    sort_by: str = None,
+    skip: int = 0, 
+    limit: int = 100
+):
+    """
+    Get aggregate data quality statistics for a platform (AD or Azure).
+    Provides time series data showing overall collection quality.
+    
+    Args:
+        platform_id: Platform ID - must be 'ad' or 'azure'
+        start: Beginning datetime in RFC-3339 format (optional)
+        end: Ending datetime in RFC-3339 format (optional)
+        sort_by: Sort by field - 'created_at' or 'updated_at' (optional)
+        skip: Number of results to skip for pagination
+        limit: Maximum number of results to return
+        
+    Returns:
+        JSON response with platform data quality statistics
+    """
+    try:
+        stats = bloodhound_api.data_quality.get_platform_data_quality_stats(
+            platform_id, start, end, sort_by, skip, limit
+        )
+        return json.dumps({
+            "message": f"Successfully retrieved platform data quality stats for: {platform_id}",
+            "platform_id": platform_id,
+            "data_quality_stats": stats.get("data", []),
+            "count": stats.get("count", 0),
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving platform data quality stats: {e}")
+        return json.dumps({"error": f"Failed to retrieve platform data quality stats: {str(e)}"})
+
+
+# ===============================
+# CUSTOM NODES API TOOLS
+# ===============================
+
+@mcp.tool()
+def get_all_custom_nodes():
+    """
+    Get all custom node configurations from BloodHound.
+    Custom nodes represent objects outside of standard AD and Azure types.
+    
+    Returns:
+        JSON response with all custom node configurations including display settings
+    """
+    try:
+        nodes = bloodhound_api.custom_nodes.get_all_custom_nodes()
+        return json.dumps({
+            "message": f"Successfully retrieved {len(nodes.get('data', []))} custom node configurations",
+            "custom_nodes": nodes.get("data", []),
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving custom nodes: {e}")
+        return json.dumps({"error": f"Failed to retrieve custom nodes: {str(e)}"})
+
+
+@mcp.tool()
+def get_custom_node(kind_name: str):
+    """
+    Get configuration for a specific custom node kind.
+    
+    Args:
+        kind_name: The name of the custom node kind to query
+        
+    Returns:
+        JSON response with the custom node configuration
+    """
+    try:
+        node = bloodhound_api.custom_nodes.get_custom_node(kind_name)
+        return json.dumps({
+            "message": f"Successfully retrieved custom node configuration for: {kind_name}",
+            "custom_node": node.get("data", {}),
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving custom node {kind_name}: {e}")
+        return json.dumps({"error": f"Failed to retrieve custom node {kind_name}: {str(e)}"})
+
+
+@mcp.tool()
+def create_custom_nodes(custom_types_json: str):
+    """
+    Create new custom node kinds with display metadata.
+    
+    Args:
+        custom_types_json: JSON string containing custom types configuration.
+                          Each type should have an 'icon' object with:
+                          - type: "font-awesome"
+                          - name: Icon name (without fa- prefix) 
+                          - color: Color in #RGB or #RRGGBB format
+                          
+    Example custom_types_json:
+    {
+        "SQLServer": {
+            "icon": {
+                "type": "font-awesome",
+                "name": "database", 
+                "color": "#FF0000"
+            }
+        },
+        "WebApp": {
+            "icon": {
+                "type": "font-awesome",
+                "name": "globe",
+                "color": "#00FF00"
+            }
+        }
+    }
+    
+    Returns:
+        JSON response with created custom node configurations
+    """
+    try:
+        import json as json_module
+        custom_types = json_module.loads(custom_types_json)
+        
+        # Validate each icon configuration
+        for kind_name, config in custom_types.items():
+            if "icon" in config:
+                validation = bloodhound_api.custom_nodes.validate_icon_config(config["icon"])
+                if not validation["valid"]:
+                    return json.dumps({
+                        "error": f"Invalid icon configuration for {kind_name}: {validation['errors']}"
+                    })
+        
+        nodes = bloodhound_api.custom_nodes.create_custom_nodes(custom_types)
+        return json.dumps({
+            "message": f"Successfully created {len(nodes.get('data', []))} custom node types",
+            "created_nodes": nodes.get("data", []),
+        })
+    except json_module.JSONDecodeError as e:
+        return json.dumps({"error": f"Invalid JSON format: {str(e)}"})
+    except Exception as e:
+        logger.error(f"Error creating custom nodes: {e}")
+        return json.dumps({"error": f"Failed to create custom nodes: {str(e)}"})
+
+
+@mcp.tool()
+def update_custom_node(kind_name: str, config_json: str):
+    """
+    Update existing custom node kind with display metadata.
+    
+    Args:
+        kind_name: The name of the custom node kind to update
+        config_json: JSON string containing the icon configuration:
+                    {
+                        "icon": {
+                            "type": "font-awesome",
+                            "name": "icon_name",
+                            "color": "#RRGGBB"
+                        }
+                    }
+                    
+    Returns:
+        JSON response with updated custom node configuration
+    """
+    try:
+        import json as json_module
+        config = json_module.loads(config_json)
+        
+        # Validate icon configuration if present
+        if "icon" in config:
+            validation = bloodhound_api.custom_nodes.validate_icon_config(config["icon"])
+            if not validation["valid"]:
+                return json.dumps({
+                    "error": f"Invalid icon configuration: {validation['errors']}"
+                })
+        
+        node = bloodhound_api.custom_nodes.update_custom_node(kind_name, config)
+        return json.dumps({
+            "message": f"Successfully updated custom node: {kind_name}",
+            "updated_node": node.get("data", {}),
+        })
+    except json_module.JSONDecodeError as e:
+        return json.dumps({"error": f"Invalid JSON format: {str(e)}"})
+    except Exception as e:
+        logger.error(f"Error updating custom node {kind_name}: {e}")
+        return json.dumps({"error": f"Failed to update custom node {kind_name}: {str(e)}"})
+
+
+@mcp.tool()
+def delete_custom_node(kind_name: str):
+    """
+    Delete configuration for a specific custom node kind.
+    
+    Args:
+        kind_name: The name of the custom node kind to delete
+        
+    Returns:
+        JSON response confirming deletion
+    """
+    try:
+        bloodhound_api.custom_nodes.delete_custom_node(kind_name)
+        return json.dumps({
+            "message": f"Successfully deleted custom node: {kind_name}",
+        })
+    except Exception as e:
+        logger.error(f"Error deleting custom node {kind_name}: {e}")
+        return json.dumps({"error": f"Failed to delete custom node {kind_name}: {str(e)}"})
+
+
+@mcp.tool()
+def validate_custom_node_icon(icon_config_json: str):
+    """
+    Validate icon configuration for custom nodes before creating/updating.
+    
+    Args:
+        icon_config_json: JSON string containing icon configuration:
+                         {
+                             "type": "font-awesome",
+                             "name": "icon_name", 
+                             "color": "#RRGGBB"
+                         }
+                         
+    Returns:
+        JSON response with validation results including any warnings or errors
+    """
+    try:
+        import json as json_module
+        icon_config = json_module.loads(icon_config_json)
+        
+        validation = bloodhound_api.custom_nodes.validate_icon_config(icon_config)
+        return json.dumps({
+            "message": "Icon validation completed",
+            "validation_result": validation,
+        })
+    except json_module.JSONDecodeError as e:
+        return json.dumps({"error": f"Invalid JSON format: {str(e)}"})
+    except Exception as e:
+        logger.error(f"Error validating icon config: {e}")
+        return json.dumps({"error": f"Failed to validate icon config: {str(e)}"})
+
+
+# ===============================
+# ASSET GROUPS API TOOLS  
+# ===============================
+
+@mcp.tool()
+def list_asset_groups(
+    sort_by: str = None,
+    name: str = None,
+    tag: str = None,
+    system_group: bool = None,
+    member_count: int = None,
+    asset_group_id: int = None
+):
+    """
+    List all asset isolation groups with optional filtering.
+    Asset groups help organize and isolate sets of assets for security analysis.
+    
+    Args:
+        sort_by: Sort by field - 'name', 'tag', or 'member_count' (optional)
+        name: Filter by asset group name (optional)
+        tag: Filter by asset group tag (optional)
+        system_group: Filter by system group status (optional)
+        member_count: Filter by member count (optional)
+        asset_group_id: Filter by specific asset group ID (optional)
+        
+    Returns:
+        JSON response with list of asset groups and their configurations
+    """
+    try:
+        groups = bloodhound_api.asset_groups.list_asset_groups(
+            sort_by=sort_by,
+            name=name,
+            tag=tag,
+            system_group=system_group,
+            member_count=member_count,
+            asset_group_id=asset_group_id
+        )
+        asset_groups = groups.get("data", {}).get("asset_groups", [])
+        return json.dumps({
+            "message": f"Successfully retrieved {len(asset_groups)} asset groups",
+            "asset_groups": asset_groups,
+        })
+    except Exception as e:
+        logger.error(f"Error listing asset groups: {e}")
+        return json.dumps({"error": f"Failed to list asset groups: {str(e)}"})
+
+
+@mcp.tool()
+def create_asset_group(name: str, tag: str):
+    """
+    Create a new asset group for organizing and isolating assets.
+    
+    Args:
+        name: Name of the asset group
+        tag: Tag for the asset group (used for identification and filtering)
+        
+    Returns:
+        JSON response with created asset group configuration
+    """
+    try:
+        group = bloodhound_api.asset_groups.create_asset_group(name, tag)
+        return json.dumps({
+            "message": f"Successfully created asset group: {name}",
+            "asset_group": group.get("data", {}),
+        })
+    except Exception as e:
+        logger.error(f"Error creating asset group: {e}")
+        return json.dumps({"error": f"Failed to create asset group: {str(e)}"})
+
+
+@mcp.tool()
+def get_asset_group(asset_group_id: int):
+    """
+    Get details for a specific asset group by ID.
+    
+    Args:
+        asset_group_id: ID of the asset group to retrieve
+        
+    Returns:
+        JSON response with asset group configuration and details
+    """
+    try:
+        group = bloodhound_api.asset_groups.get_asset_group(asset_group_id)
+        return json.dumps({
+            "message": f"Successfully retrieved asset group ID: {asset_group_id}",
+            "asset_group": group.get("data", {}),
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving asset group {asset_group_id}: {e}")
+        return json.dumps({"error": f"Failed to retrieve asset group {asset_group_id}: {str(e)}"})
+
+
+@mcp.tool()
+def update_asset_group(asset_group_id: int, name: str):
+    """
+    Update an existing asset group's name.
+    
+    Args:
+        asset_group_id: ID of the asset group to update
+        name: New name for the asset group
+        
+    Returns:
+        JSON response with updated asset group configuration
+    """
+    try:
+        group = bloodhound_api.asset_groups.update_asset_group(asset_group_id, name)
+        return json.dumps({
+            "message": f"Successfully updated asset group ID: {asset_group_id}",
+            "asset_group": group.get("data", {}),
+        })
+    except Exception as e:
+        logger.error(f"Error updating asset group {asset_group_id}: {e}")
+        return json.dumps({"error": f"Failed to update asset group {asset_group_id}: {str(e)}"})
+
+
+@mcp.tool()
+def delete_asset_group(asset_group_id: int):
+    """
+    Delete an asset group.
+    
+    Args:
+        asset_group_id: ID of the asset group to delete
+        
+    Returns:
+        JSON response confirming deletion
+    """
+    try:
+        bloodhound_api.asset_groups.delete_asset_group(asset_group_id)
+        return json.dumps({
+            "message": f"Successfully deleted asset group ID: {asset_group_id}",
+        })
+    except Exception as e:
+        logger.error(f"Error deleting asset group {asset_group_id}: {e}")
+        return json.dumps({"error": f"Failed to delete asset group {asset_group_id}: {str(e)}"})
+
+
+@mcp.tool()
+def list_asset_group_collections(asset_group_id: int, skip: int = 0, limit: int = 100):
+    """
+    List asset group collections (historical memberships).
+    Collections represent snapshots of asset group membership over time.
+    
+    Args:
+        asset_group_id: ID of the asset group
+        skip: Number of results to skip for pagination
+        limit: Maximum number of results to return
+        
+    Returns:
+        JSON response with asset group collections
+    """
+    try:
+        collections = bloodhound_api.asset_groups.list_asset_group_collections(
+            asset_group_id, skip=skip, limit=limit
+        )
+        return json.dumps({
+            "message": f"Successfully retrieved collections for asset group ID: {asset_group_id}",
+            "collections": collections.get("data", []),
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving asset group collections: {e}")
+        return json.dumps({"error": f"Failed to retrieve asset group collections: {str(e)}"})
+
+
+@mcp.tool()
+def get_asset_group_member_counts(asset_group_id: int):
+    """
+    Get member count statistics for an asset group, broken down by object kind.
+    
+    Args:
+        asset_group_id: ID of the asset group
+        
+    Returns:
+        JSON response with total count and counts by object kind
+    """
+    try:
+        counts = bloodhound_api.asset_groups.list_asset_group_member_counts(asset_group_id)
+        data = counts.get("data", {})
+        return json.dumps({
+            "message": f"Successfully retrieved member counts for asset group ID: {asset_group_id}",
+            "total_count": data.get("total_count", 0),
+            "counts_by_kind": data.get("counts", {}),
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving asset group member counts: {e}")
+        return json.dumps({"error": f"Failed to retrieve asset group member counts: {str(e)}"})
+
+
+@mcp.tool()
+def update_asset_group_selectors(asset_group_id: int, selectors_json: str):
+    """
+    Update selectors for an asset group. Selectors define which objects 
+    should be included in the asset group based on criteria.
+    
+    Args:
+        asset_group_id: ID of the asset group
+        selectors_json: JSON string containing array of selector specifications
+                       
+    Example selectors_json:
+    [
+        {
+            "name": "Domain Controllers",
+            "selector": "n:Computer WHERE n.serviceprincipalnames CONTAINS 'ldap/'",
+            "system_selector": false
+        }
+    ]
+    
+    Returns:
+        JSON response with updated asset group configuration
+    """
+    try:
+        import json as json_module
+        selectors = json_module.loads(selectors_json)
+        
+        result = bloodhound_api.asset_groups.update_asset_group_selectors(
+            asset_group_id, selectors
+        )
+        return json.dumps({
+            "message": f"Successfully updated selectors for asset group ID: {asset_group_id}",
+            "asset_group": result.get("data", {}),
+        })
+    except json_module.JSONDecodeError as e:
+        return json.dumps({"error": f"Invalid JSON format: {str(e)}"})
+    except Exception as e:
+        logger.error(f"Error updating asset group selectors: {e}")
+        return json.dumps({"error": f"Failed to update asset group selectors: {str(e)}"})
+
+
+# ===============================
+# ASSET GROUP TAGS API TOOLS
+# ===============================
+
+@mcp.tool()
+def list_asset_group_tags(
+    sort_by: str = None,
+    name: str = None, 
+    tag: str = None,
+    skip: int = 0,
+    limit: int = 100
+):
+    """
+    List asset group tags using the newer tags API.
+    Asset group tags provide enhanced functionality over basic asset groups.
+    
+    Args:
+        sort_by: Sort by field (optional)
+        name: Filter by tag name (optional)
+        tag: Filter by tag value (optional)
+        skip: Number of results to skip for pagination
+        limit: Maximum number of results to return
+        
+    Returns:
+        JSON response with list of asset group tags
+    """
+    try:
+        tags = bloodhound_api.asset_groups.list_asset_group_tags(
+            sort_by=sort_by, name=name, tag=tag, skip=skip, limit=limit
+        )
+        return json.dumps({
+            "message": f"Successfully retrieved asset group tags",
+            "asset_group_tags": tags.get("data", []),
+            "count": tags.get("count", 0),
+        })
+    except Exception as e:
+        logger.error(f"Error listing asset group tags: {e}")
+        return json.dumps({"error": f"Failed to list asset group tags: {str(e)}"})
+
+
+@mcp.tool()
+def create_asset_group_tag(name: str, tag: str):
+    """
+    Create a new asset group tag.
+    
+    Args:
+        name: Name of the asset group tag
+        tag: Tag value
+        
+    Returns:
+        JSON response with created asset group tag
+    """
+    try:
+        tag_obj = bloodhound_api.asset_groups.create_asset_group_tag(name, tag)
+        return json.dumps({
+            "message": f"Successfully created asset group tag: {name}",
+            "asset_group_tag": tag_obj.get("data", {}),
+        })
+    except Exception as e:
+        logger.error(f"Error creating asset group tag: {e}")
+        return json.dumps({"error": f"Failed to create asset group tag: {str(e)}"})
+
+
+@mcp.tool()
+def get_asset_group_tag_members(asset_group_tag_id: int, skip: int = 0, limit: int = 100):
+    """
+    List members of a specific asset group tag.
+    
+    Args:
+        asset_group_tag_id: ID of the asset group tag
+        skip: Number of results to skip for pagination
+        limit: Maximum number of results to return
+        
+    Returns:
+        JSON response with list of members in the asset group tag
+    """
+    try:
+        members = bloodhound_api.asset_groups.list_asset_group_tag_members(
+            asset_group_tag_id, skip=skip, limit=limit
+        )
+        return json.dumps({
+            "message": f"Successfully retrieved members for asset group tag ID: {asset_group_tag_id}",
+            "members": members.get("data", []),
+            "count": members.get("count", 0),
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving asset group tag members: {e}")
+        return json.dumps({"error": f"Failed to retrieve asset group tag members: {str(e)}"})
 
 
 # main function to start the server

@@ -236,6 +236,9 @@ class BloodhoundAPI:
         self.graph = GraphClient(self.base_client)
         self.adcs = ADCSClient(self.base_client)
         self.cypher = CypherClient(self.base_client)
+        self.data_quality = DataQualityClient(self.base_client)
+        self.custom_nodes = CustomNodesClient(self.base_client)
+        self.asset_groups = AssetGroupsClient(self.base_client)
 
     def test_connection(self) -> Dict[str, Any]:
         """
@@ -1695,6 +1698,7 @@ class ADCSClient:
             "GET", f"/api/v2/aia-cas/{ca_id}/controllers", params=params
         )
 
+
 class CypherClient:
     """Client for Cypher query related BloodHound API endpoints"""
 
@@ -1715,15 +1719,16 @@ class CypherClient:
         Raises:
             BloodhoundAPIError: For authentication, server errors, or malformed queries
             BloodhoundConnectionError: For network connectivity issues
-            
+
         Note: 404 responses are treated as successful queries with no results, not errors
         """
         data = {"query": query, "includeproperties": include_properties}
-        
+
         try:
-            response = self.base_client._request("POST", "/api/v2/graphs/cypher", 
-                                               json.dumps(data).encode("utf8"))
-            
+            response = self.base_client._request(
+                "POST", "/api/v2/graphs/cypher", json.dumps(data).encode("utf8")
+            )
+
             if response.status_code == 200:
                 try:
                     json_data = response.json()
@@ -1734,138 +1739,146 @@ class CypherClient:
                             "status": "success_with_results",
                             "query": query,
                             "has_results": True,
-                            "status_code": 200
-                        }
+                            "status_code": 200,
+                        },
                     }
                 except json.JSONDecodeError:
-                    raise BloodhoundAPIError("Invalid JSON response from Cypher query", response=response)
-            
+                    raise BloodhoundAPIError(
+                        "Invalid JSON response from Cypher query", response=response
+                    )
+
             elif response.status_code == 404:
                 return {
                     "success": True,
                     "data": {"nodes": [], "edges": []},
                     "metadata": {
-                        "status": "success_no_results", 
+                        "status": "success_no_results",
                         "query": query,
                         "has_results": False,
                         "status_code": 404,
-                        "message": "Query executed successfully but found no matching data"
-                    }
+                        "message": "Query executed successfully but found no matching data",
+                    },
                 }
-            
+
             elif response.status_code == 400:
                 try:
                     error_data = response.json()
                     error_detail = error_data.get("error", "Unknown syntax error")
                 except json.JSONDecodeError:
                     error_detail = "Malformed Cypher query"
-                
+
                 raise BloodhoundAPIError(
-                    f"Cypher query syntax error: {error_detail}", 
-                    response=response
+                    f"Cypher query syntax error: {error_detail}", response=response
                 )
-            
+
             elif response.status_code == 401:
                 raise BloodhoundAPIError(
-                    "Authentication failed - check your BloodHound API credentials", 
-                    response=response
+                    "Authentication failed - check your BloodHound API credentials",
+                    response=response,
                 )
-            
+
             elif response.status_code == 403:
                 raise BloodhoundAPIError(
-                    "Permission denied - insufficient privileges for Cypher queries", 
-                    response=response
+                    "Permission denied - insufficient privileges for Cypher queries",
+                    response=response,
                 )
-            
+
             elif response.status_code == 429:
                 raise BloodhoundAPIError(
-                    "Rate limit exceeded - too many requests. Please wait before retrying.", 
-                    response=response
+                    "Rate limit exceeded - too many requests. Please wait before retrying.",
+                    response=response,
                 )
-            
+
             elif response.status_code >= 500:
                 try:
                     error_data = response.json()
                     error_detail = error_data.get("error", "Unknown server error")
                 except json.JSONDecodeError:
                     error_detail = f"HTTP {response.status_code}"
-                
+
                 raise BloodhoundAPIError(
-                    f"BloodHound server error: {error_detail}", 
-                    response=response
+                    f"BloodHound server error: {error_detail}", response=response
                 )
-            
+
             else:
                 raise BloodhoundAPIError(
-                    f"Unexpected response status: {response.status_code}", 
-                    response=response
+                    f"Unexpected response status: {response.status_code}",
+                    response=response,
                 )
-                
+
         except requests.exceptions.ConnectionError as e:
-            raise BloodhoundConnectionError(f"Failed to connect to BloodHound for Cypher query: {e}")
+            raise BloodhoundConnectionError(
+                f"Failed to connect to BloodHound for Cypher query: {e}"
+            )
         except requests.exceptions.Timeout as e:
             raise BloodhoundConnectionError(f"Request timeout during Cypher query: {e}")
         except requests.exceptions.RequestException as e:
             raise BloodhoundConnectionError(f"Network error during Cypher query: {e}")
 
-    def run_query_with_retry(self, query: str, include_properties: bool = True, max_retries: int = 3) -> Dict[str, Any]:
+    def run_query_with_retry(
+        self, query: str, include_properties: bool = True, max_retries: int = 3
+    ) -> Dict[str, Any]:
         """
         Run a Cypher query with automatic retry logic for transient failures
-        
+
         Args:
             query: The Cypher query to execute
             include_properties: Whether to include node/edge properties
             max_retries: Maximum number of retry attempts
-            
+
         Returns:
             Query result dictionary
-            
+
         Raises:
             BloodhoundAPIError: For non-retryable errors (syntax, auth, permissions)
             BloodhoundConnectionError: For persistent connection issues
         """
         import time
-        
+
         last_exception = None
-        
+
         for attempt in range(max_retries + 1):
             try:
                 return self.run_query(query, include_properties)
-            
+
             except BloodhoundConnectionError as e:
                 last_exception = e
                 if attempt < max_retries:
-                    wait_time = 2 ** attempt  # Exponential backoff: 2, 4, 8 seconds
+                    wait_time = 2**attempt  # Exponential backoff: 2, 4, 8 seconds
                     time.sleep(wait_time)
                     continue
                 else:
                     raise
-            
+
             except BloodhoundAPIError as e:
                 # Don't retry client errors (4xx) except rate limiting
                 if e.status_code in [400, 401, 403]:
                     raise
-                
+
                 # Retry rate limiting and server errors
                 last_exception = e
-                if attempt < max_retries and (e.status_code == 429 or e.status_code >= 500):
-                    wait_time = 2 ** attempt
+                if attempt < max_retries and (
+                    e.status_code == 429 or e.status_code >= 500
+                ):
+                    wait_time = 2**attempt
                     if e.status_code == 429:
-                        wait_time = max(wait_time, 10)  # Minimum 10 seconds for rate limiting
+                        wait_time = max(
+                            wait_time, 10
+                        )  # Minimum 10 seconds for rate limiting
                     time.sleep(wait_time)
                     continue
                 else:
                     raise
-        
+
         raise last_exception
 
     def validate_query(self, query: str) -> Dict[str, Any]:
         """
         Validate a Cypher query without executing it
-        
+
         Args:
             query: The Cypher query to validate
-            
+
         Returns:
             Dictionary with validation results
         """
@@ -1873,24 +1886,35 @@ class CypherClient:
             "is_empty": not query.strip(),
             "has_return": "RETURN" in query.upper(),
             "has_match": "MATCH" in query.upper(),
-            "estimated_complexity": "high" if any(keyword in query.upper() for keyword in ["*", "ALL", "COLLECT"]) else "medium"
+            "estimated_complexity": "high"
+            if any(keyword in query.upper() for keyword in ["*", "ALL", "COLLECT"])
+            else "medium",
         }
-        
+
         return {
             "valid": not basic_checks["is_empty"],
             "checks": basic_checks,
             "warnings": [
                 "Query appears empty" if basic_checks["is_empty"] else None,
-                "Query may have high complexity" if basic_checks["estimated_complexity"] == "high" else None
-            ]
+                "Query may have high complexity"
+                if basic_checks["estimated_complexity"] == "high"
+                else None,
+            ],
         }
 
-    def list_saved_queries(self, skip: int = 0, limit: int = 100, sort_by: str = None, 
-                          name: str = None, query: str = None, user_id: str = None, 
-                          scope: str = None) -> Dict[str, Any]:
+    def list_saved_queries(
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        sort_by: str = None,
+        name: str = None,
+        query: str = None,
+        user_id: str = None,
+        scope: str = None,
+    ) -> Dict[str, Any]:
         """
         List saved Cypher queries with optional filtering
-        
+
         Args:
             skip: Number of results to skip for pagination
             limit: Maximum number of results to return
@@ -1899,12 +1923,12 @@ class CypherClient:
             query: Filter by query content
             user_id: Filter by user ID
             scope: Filter by scope
-            
+
         Returns:
             Dictionary with saved queries list and metadata
         """
         params = {"skip": skip, "limit": limit}
-        
+
         if sort_by:
             params["sortby"] = sort_by
         if name:
@@ -1921,24 +1945,26 @@ class CypherClient:
     def get_saved_query(self, query_id: int) -> Dict[str, Any]:
         """
         Get a specific saved query by ID
-        
+
         Args:
             query_id: ID of the saved query
-            
+
         Returns:
             Dictionary with saved query details
         """
         return self.base_client.request("GET", f"/api/v2/saved-queries/{query_id}")
 
-    def create_saved_query(self, name: str, query: str, description: str = None) -> Dict[str, Any]:
+    def create_saved_query(
+        self, name: str, query: str, description: str = None
+    ) -> Dict[str, Any]:
         """
         Create a new saved Cypher query
-        
+
         Args:
             name: Name for the saved query
             query: The Cypher query to save
             description: Optional description
-            
+
         Returns:
             Dictionary with created saved query
         """
@@ -1948,7 +1974,11 @@ class CypherClient:
         return self.base_client.request("POST", "/api/v2/saved-queries", data=data)
 
     def update_saved_query(
-        self, query_id: int, name: str = None, query: str = None, description: str = None
+        self,
+        query_id: int,
+        name: str = None,
+        query: str = None,
+        description: str = None,
     ) -> Dict[str, Any]:
         """
         Update an existing saved query
@@ -2018,4 +2048,627 @@ class CypherClient:
         data = {"userids": user_ids}
         self.base_client.request(
             "DELETE", f"/api/v2/saved-queries/{query_id}/permissions", data=data
+        )
+
+
+
+
+class DataQualityClient:
+    """Client for data quality related BloodHound API endpoints"""
+
+    def __init__(self, base_client: BloodhoundBaseClient):
+        self.base_client = base_client
+
+    def get_completeness_stats(self) -> Dict[str, Any]:
+        """
+        Get database completeness stats
+        
+        Returns:
+            Dictionary with percentage of local admins and sessions collected
+        """
+        return self.base_client.request("GET", "/api/v2/completeness")
+
+    def get_ad_domain_data_quality_stats(
+        self,
+        domain_id: str,
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+        sort_by: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> Dict[str, Any]:
+        """
+        Get AD domain data quality stats
+        
+        Args:
+            domain_id: Domain ID
+            start: Beginning datetime in RFC-3339 format (inclusive)
+            end: Ending datetime in RFC-3339 format (exclusive)
+            sort_by: Sort by field (created_at, updated_at)
+            skip: Number of results to skip for pagination
+            limit: Maximum number of results to return
+            
+        Returns:
+            Time series list of data quality stats for the domain
+        """
+        params = {"skip": skip, "limit": limit}
+        
+        if start:
+            params["start"] = start
+        if end:
+            params["end"] = end
+        if sort_by:
+            params["sort_by"] = sort_by
+            
+        return self.base_client.request(
+            "GET", f"/api/v2/ad-domains/{domain_id}/data-quality-stats", params=params
+        )
+
+    def get_azure_tenant_data_quality_stats(
+        self,
+        tenant_id: str,
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+        sort_by: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> Dict[str, Any]:
+        """
+        Get Azure tenant data quality stats
+        
+        Args:
+            tenant_id: Tenant ID
+            start: Beginning datetime in RFC-3339 format (inclusive)
+            end: Ending datetime in RFC-3339 format (exclusive)
+            sort_by: Sort by field (created_at, updated_at)
+            skip: Number of results to skip for pagination
+            limit: Maximum number of results to return
+            
+        Returns:
+            Time series list of data quality stats for the tenant
+        """
+        params = {"skip": skip, "limit": limit}
+        
+        if start:
+            params["start"] = start
+        if end:
+            params["end"] = end
+        if sort_by:
+            params["sort_by"] = sort_by
+            
+        return self.base_client.request(
+            "GET", f"/api/v2/azure-tenants/{tenant_id}/data-quality-stats", params=params
+        )
+
+    def get_platform_data_quality_stats(
+        self,
+        platform_id: str,
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+        sort_by: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> Dict[str, Any]:
+        """
+        Get platform data quality aggregate stats
+        
+        Args:
+            platform_id: Platform ID ("ad" or "azure")
+            start: Beginning datetime in RFC-3339 format (inclusive)
+            end: Ending datetime in RFC-3339 format (exclusive)
+            sort_by: Sort by field (created_at, updated_at)
+            skip: Number of results to skip for pagination
+            limit: Maximum number of results to return
+            
+        Returns:
+            Time series list of aggregate data quality stats for the platform
+        """
+        if platform_id not in ["ad", "azure"]:
+            raise ValueError("platform_id must be 'ad' or 'azure'")
+            
+        params = {"skip": skip, "limit": limit}
+        
+        if start:
+            params["start"] = start
+        if end:
+            params["end"] = end
+        if sort_by:
+            params["sort_by"] = sort_by
+            
+        return self.base_client.request(
+            "GET", f"/api/v2/platform/{platform_id}/data-quality-stats", params=params
+        )
+
+
+class CustomNodesClient:
+    """Client for custom nodes related BloodHound API endpoints"""
+
+    def __init__(self, base_client: BloodhoundBaseClient):
+        self.base_client = base_client
+
+    def get_all_custom_nodes(self) -> Dict[str, Any]:
+        """
+        Get all custom node configurations
+        
+        Returns:
+            List of all custom node configurations with display settings
+        """
+        return self.base_client.request("GET", "/api/v2/custom-nodes")
+
+    def get_custom_node(self, kind_name: str) -> Dict[str, Any]:
+        """
+        Get configuration for a specific custom node kind
+        
+        Args:
+            kind_name: The name of the custom node kind
+            
+        Returns:
+            Configuration for the specified custom node kind
+        """
+        return self.base_client.request("GET", f"/api/v2/custom-nodes/{kind_name}")
+
+    def create_custom_nodes(self, custom_types: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Create new custom node kinds with display metadata
+        
+        Args:
+            custom_types: Dictionary mapping kind names to their configurations
+                         Each configuration should have an 'icon' object with:
+                         - type: "font-awesome" 
+                         - name: Icon name (without fa- prefix)
+                         - color: Color in #RGB or #RRGGBB format
+                         
+        Example:
+            custom_types = {
+                "SQLServer": {
+                    "icon": {
+                        "type": "font-awesome",
+                        "name": "database",
+                        "color": "#FF0000"
+                    }
+                }
+            }
+            
+        Returns:
+            List of created custom node configurations
+        """
+        data = {"custom_types": custom_types}
+        return self.base_client.request("POST", "/api/v2/custom-nodes", data=data)
+
+    def update_custom_node(
+        self, kind_name: str, config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Update existing custom node kind with display metadata
+        
+        Args:
+            kind_name: The name of the custom node kind to update
+            config: Configuration object with icon settings
+            
+        Returns:
+            Updated custom node configuration
+        """
+        data = {"config": config}
+        return self.base_client.request("PUT", f"/api/v2/custom-nodes/{kind_name}", data=data)
+
+    def delete_custom_node(self, kind_name: str) -> None:
+        """
+        Delete configuration for a specific custom node kind
+        
+        Args:
+            kind_name: The name of the custom node kind to delete
+        """
+        self.base_client.request("DELETE", f"/api/v2/custom-nodes/{kind_name}")
+
+    def validate_icon_config(self, icon_config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validate icon configuration for custom nodes
+        
+        Args:
+            icon_config: Icon configuration to validate
+            
+        Returns:
+            Validation results with any warnings or errors
+        """
+        validation_result = {
+            "valid": True,
+            "warnings": [],
+            "errors": []
+        }
+        
+        if not isinstance(icon_config, dict):
+            validation_result["valid"] = False
+            validation_result["errors"].append("Icon config must be a dictionary")
+            return validation_result
+            
+        # Check required fields
+        if "type" not in icon_config:
+            validation_result["errors"].append("Icon type is required")
+        elif icon_config["type"] != "font-awesome":
+            validation_result["warnings"].append("Only 'font-awesome' type is officially supported")
+            
+        if "name" not in icon_config:
+            validation_result["errors"].append("Icon name is required")
+        elif icon_config["name"].startswith("fa-"):
+            validation_result["warnings"].append("Icon name should not include 'fa-' prefix")
+            
+        # Check color format
+        if "color" in icon_config:
+            color = icon_config["color"]
+            if not color.startswith("#"):
+                validation_result["errors"].append("Color must start with #")
+            elif len(color) not in [4, 7]:  # #RGB or #RRGGBB
+                validation_result["errors"].append("Color must be #RGB or #RRGGBB format")
+                
+        if validation_result["errors"]:
+            validation_result["valid"] = False
+            
+        return validation_result
+
+
+class AssetGroupsClient:
+    """Client for asset groups related BloodHound API endpoints"""
+
+    def __init__(self, base_client: BloodhoundBaseClient):
+        self.base_client = base_client
+
+    def list_asset_groups(
+        self,
+        sort_by: Optional[str] = None,
+        name: Optional[str] = None,
+        tag: Optional[str] = None,
+        system_group: Optional[bool] = None,
+        member_count: Optional[int] = None,
+        asset_group_id: Optional[int] = None,
+        created_at: Optional[str] = None,
+        updated_at: Optional[str] = None,
+        deleted_at: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        List all asset isolation groups
+        
+        Args:
+            sort_by: Sort by field (name, tag, member_count)
+            name: Filter by name
+            tag: Filter by tag
+            system_group: Filter by system group status
+            member_count: Filter by member count
+            asset_group_id: Filter by ID
+            created_at: Filter by creation date
+            updated_at: Filter by update date
+            deleted_at: Filter by deletion date
+            
+        Returns:
+            List of asset groups with their configurations
+        """
+        params = {}
+        
+        if sort_by:
+            params["sort_by"] = sort_by
+        if name:
+            params["name"] = name
+        if tag:
+            params["tag"] = tag
+        if system_group is not None:
+            params["system_group"] = system_group
+        if member_count is not None:
+            params["member_count"] = member_count
+        if asset_group_id is not None:
+            params["id"] = asset_group_id
+        if created_at:
+            params["created_at"] = created_at
+        if updated_at:
+            params["updated_at"] = updated_at
+        if deleted_at:
+            params["deleted_at"] = deleted_at
+            
+        return self.base_client.request("GET", "/api/v2/asset-groups", params=params)
+
+    def create_asset_group(self, name: str, tag: str) -> Dict[str, Any]:
+        """
+        Create an asset group
+        
+        Args:
+            name: Name of the asset group
+            tag: Tag for the asset group
+            
+        Returns:
+            Created asset group configuration
+        """
+        data = {"name": name, "tag": tag}
+        return self.base_client.request("POST", "/api/v2/asset-groups", data=data)
+
+    def get_asset_group(self, asset_group_id: int) -> Dict[str, Any]:
+        """
+        Get asset group by ID
+        
+        Args:
+            asset_group_id: ID of the asset group
+            
+        Returns:
+            Asset group configuration
+        """
+        return self.base_client.request("GET", f"/api/v2/asset-groups/{asset_group_id}")
+
+    def update_asset_group(self, asset_group_id: int, name: str) -> Dict[str, Any]:
+        """
+        Update an asset group
+        
+        Args:
+            asset_group_id: ID of the asset group to update
+            name: New name for the asset group
+            
+        Returns:
+            Updated asset group configuration
+        """
+        data = {"name": name}
+        return self.base_client.request("PUT", f"/api/v2/asset-groups/{asset_group_id}", data=data)
+
+    def delete_asset_group(self, asset_group_id: int) -> None:
+        """
+        Delete an asset group
+        
+        Args:
+            asset_group_id: ID of the asset group to delete
+        """
+        self.base_client.request("DELETE", f"/api/v2/asset-groups/{asset_group_id}")
+
+    def list_asset_group_collections(
+        self,
+        asset_group_id: int,
+        sort_by: Optional[str] = None,
+        collection_id: Optional[int] = None,
+        created_at: Optional[str] = None,
+        updated_at: Optional[str] = None,
+        deleted_at: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        List asset group collections
+        
+        Args:
+            asset_group_id: ID of the asset group
+            sort_by: Sort by field
+            collection_id: Filter by collection ID
+            created_at: Filter by creation date
+            updated_at: Filter by update date
+            deleted_at: Filter by deletion date
+            
+        Returns:
+            List of asset group collections (historical memberships)
+        """
+        params = {}
+        
+        if sort_by:
+            params["sort_by"] = sort_by
+        if collection_id is not None:
+            params["id"] = collection_id
+        if created_at:
+            params["created_at"] = created_at
+        if updated_at:
+            params["updated_at"] = updated_at
+        if deleted_at:
+            params["deleted_at"] = deleted_at
+            
+        return self.base_client.request(
+            "GET", f"/api/v2/asset-groups/{asset_group_id}/collections", params=params
+        )
+
+    def update_asset_group_selectors(
+        self, asset_group_id: int, selectors: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Update asset group selectors
+        
+        Args:
+            asset_group_id: ID of the asset group
+            selectors: List of selector specifications
+            
+        Returns:
+            Updated asset group configuration
+        """
+        return self.base_client.request(
+            "PUT", f"/api/v2/asset-groups/{asset_group_id}/selectors", data=selectors
+        )
+
+    def list_asset_group_member_counts(self, asset_group_id: int) -> Dict[str, Any]:
+        """
+        List asset group member count by kind
+        
+        Args:
+            asset_group_id: ID of the asset group
+            
+        Returns:
+            Dictionary with total count and counts by kind
+        """
+        return self.base_client.request(
+            "GET", f"/api/v2/asset-groups/{asset_group_id}/members/counts"
+        )
+
+    # Asset Group Tags API methods (newer API structure)
+    def list_asset_group_tags(
+        self,
+        sort_by: Optional[str] = None,
+        name: Optional[str] = None,
+        tag: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> Dict[str, Any]:
+        """
+        List asset group tags
+        
+        Args:
+            sort_by: Sort by field
+            name: Filter by name
+            tag: Filter by tag
+            skip: Number of results to skip
+            limit: Maximum number of results
+            
+        Returns:
+            List of asset group tags
+        """
+        params = {"skip": skip, "limit": limit}
+        
+        if sort_by:
+            params["sort_by"] = sort_by
+        if name:
+            params["name"] = name
+        if tag:
+            params["tag"] = tag
+            
+        return self.base_client.request("GET", "/api/v2/asset-group-tags", params=params)
+
+    def create_asset_group_tag(self, name: str, tag: str) -> Dict[str, Any]:
+        """
+        Create asset group tag
+        
+        Args:
+            name: Name of the tag
+            tag: Tag value
+            
+        Returns:
+            Created asset group tag
+        """
+        data = {"name": name, "tag": tag}
+        return self.base_client.request("POST", "/api/v2/asset-group-tags", data=data)
+
+    def get_asset_group_tag(self, asset_group_tag_id: int) -> Dict[str, Any]:
+        """
+        Get specific asset group tag by ID
+        
+        Args:
+            asset_group_tag_id: ID of the asset group tag
+            
+        Returns:
+            Asset group tag configuration
+        """
+        return self.base_client.request("GET", f"/api/v2/asset-group-tags/{asset_group_tag_id}")
+
+    def update_asset_group_tag(
+        self, asset_group_tag_id: int, name: str, tag: str
+    ) -> Dict[str, Any]:
+        """
+        Update asset group tag
+        
+        Args:
+            asset_group_tag_id: ID of the asset group tag
+            name: New name
+            tag: New tag value
+            
+        Returns:
+            Updated asset group tag
+        """
+        data = {"name": name, "tag": tag}
+        return self.base_client.request("PUT", f"/api/v2/asset-group-tags/{asset_group_tag_id}", data=data)
+
+    def delete_asset_group_tag(self, asset_group_tag_id: int) -> None:
+        """
+        Delete asset group tag
+        
+        Args:
+            asset_group_tag_id: ID of the asset group tag to delete
+        """
+        self.base_client.request("DELETE", f"/api/v2/asset-group-tags/{asset_group_tag_id}")
+
+    def list_asset_group_tag_members(
+        self, asset_group_tag_id: int, skip: int = 0, limit: int = 100
+    ) -> Dict[str, Any]:
+        """
+        List asset group tag members
+        
+        Args:
+            asset_group_tag_id: ID of the asset group tag
+            skip: Number of results to skip
+            limit: Maximum number of results
+            
+        Returns:
+            List of members in the asset group tag
+        """
+        params = {"skip": skip, "limit": limit}
+        return self.base_client.request(
+            "GET", f"/api/v2/asset-group-tags/{asset_group_tag_id}/members", params=params
+        )
+
+    def list_asset_group_tag_selectors(
+        self, asset_group_tag_id: int, skip: int = 0, limit: int = 100
+    ) -> Dict[str, Any]:
+        """
+        List asset group tag selectors
+        
+        Args:
+            asset_group_tag_id: ID of the asset group tag
+            skip: Number of results to skip
+            limit: Maximum number of results
+            
+        Returns:
+            List of selectors for the asset group tag
+        """
+        params = {"skip": skip, "limit": limit}
+        return self.base_client.request(
+            "GET", f"/api/v2/asset-group-tags/{asset_group_tag_id}/selectors", params=params
+        )
+
+    def create_asset_group_tag_selector(
+        self, asset_group_tag_id: int, selector_spec: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Create asset group tag selector
+        
+        Args:
+            asset_group_tag_id: ID of the asset group tag
+            selector_spec: Selector specification
+            
+        Returns:
+            Created selector configuration
+        """
+        return self.base_client.request(
+            "POST", f"/api/v2/asset-group-tags/{asset_group_tag_id}/selectors", data=selector_spec
+        )
+
+    def get_asset_group_tag_selector(
+        self, asset_group_tag_id: int, selector_id: int
+    ) -> Dict[str, Any]:
+        """
+        Get specific asset group tag selector
+        
+        Args:
+            asset_group_tag_id: ID of the asset group tag
+            selector_id: ID of the selector
+            
+        Returns:
+            Selector configuration
+        """
+        return self.base_client.request(
+            "GET", f"/api/v2/asset-group-tags/{asset_group_tag_id}/selectors/{selector_id}"
+        )
+
+    def update_asset_group_tag_selector(
+        self, asset_group_tag_id: int, selector_id: int, selector_spec: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Update asset group tag selector
+        
+        Args:
+            asset_group_tag_id: ID of the asset group tag
+            selector_id: ID of the selector to update
+            selector_spec: Updated selector specification
+            
+        Returns:
+            Updated selector configuration
+        """
+        return self.base_client.request(
+            "PUT", f"/api/v2/asset-group-tags/{asset_group_tag_id}/selectors/{selector_id}", data=selector_spec
+        )
+
+    def delete_asset_group_tag_selector(
+        self, asset_group_tag_id: int, selector_id: int
+    ) -> None:
+        """
+        Delete asset group tag selector
+        
+        Args:
+            asset_group_tag_id: ID of the asset group tag
+            selector_id: ID of the selector to delete
+        """
+        self.base_client.request(
+            "DELETE", f"/api/v2/asset-group-tags/{asset_group_tag_id}/selectors/{selector_id}"
         )
