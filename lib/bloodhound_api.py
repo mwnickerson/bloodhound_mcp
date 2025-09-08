@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlencode
 
 import requests
 from dotenv import load_dotenv
@@ -163,10 +164,7 @@ class BloodhoundBaseClient:
         """
         # Add query parameters if provided
         if params:
-            param_strings = []
-            for key, value in params.items():
-                param_strings.append(f"{key}={value}")
-            uri = f"{uri}?{'&'.join(param_strings)}"
+            uri = f"{uri}?{urlencode(params)}"
 
         # Prepare request body if provided
         body = None
@@ -1485,8 +1483,6 @@ class GraphClient:
     def __init__(self, base_client: BloodhoundBaseClient):
         self.base_client = base_client
 
-    # I am getting a 401 error when searching for some objects and it works on others
-    # for example if i search for Domain Admins it fails with a 401 error but if i search for TargetUserB it works fine
     def search(self, query: str, search_type: str = "fuzzy") -> Dict[str, Any]:
         """
         Search for nodes in the graph by name
