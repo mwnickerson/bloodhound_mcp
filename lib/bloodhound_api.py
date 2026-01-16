@@ -50,18 +50,18 @@ class BloodhoundBaseClient:
         domain: str = None,
         token_id: str = None,
         token_key: str = None,
-        port: int = 443,
-        scheme: str = "https",
+        port: int = None,
+        scheme: str = None,
     ):
         """
         Initialize BloodHound API base client
 
         Args:
-            domain: BloodHound Enterprise domain (e.g. xyz.bloodhoundenterprise.io)
+            domain: BloodHound CE/Enterprise domain (e.g. localhost or xyz.bloodhoundenterprise.io)
             token_id: API token ID
             token_key: API token key
-            port: API port (default: 443)
-            scheme: URL scheme (default: https)
+            port: API port (default: 443, or set BLOODHOUND_PORT env var)
+            scheme: URL scheme (default: https, or set BLOODHOUND_SCHEME env var)
         """
         # Load from parameters or environment variables
         self.scheme = scheme
@@ -203,21 +203,20 @@ class BloodhoundAPI:
         domain: str = None,
         token_id: str = None,
         token_key: str = None,
-        port: int = 443,
-        scheme: str = "https",
+        port: int = None,
+        scheme: str = None,
     ):
         """
         Initialize BloodHound API client
 
         Args:
-            domain: BloodHound Enterprise domain (e.g. xyz.bloodhoundenterprise.io)
+            domain: BloodHound CE/Enterprise domain (e.g. localhost or xyz.bloodhoundenterprise.io)
             token_id: API token ID
             token_key: API token key
-            port: API port (default: 443)
-            scheme: URL scheme (default: https)
-
-        If domain, token_id, or token_key are not provided, they will be loaded from
-        environment variables: BLOODHOUND_DOMAIN, BLOODHOUND_TOKEN_ID, BLOODHOUND_TOKEN_KEY
+            port: API port 
+            scheme: URL scheme
+        If domain, token_id, token_key, port or scheme are not provided, they will be loaded from
+        environment variables: BLOODHOUND_DOMAIN, BLOODHOUND_TOKEN_ID, BLOODHOUND_TOKEN_KEY, BLOODHOUND_PORT, BLOODHOUND_SCHEME
         """
         # Initialize base client
         self.base_client = BloodhoundBaseClient(
