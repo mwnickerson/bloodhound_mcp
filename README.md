@@ -86,6 +86,12 @@ As a proper Model Context Protocol implementation:
    BLOODHOUND_TOKEN_KEY=your-token-key
    ```
 
+   **Note:** By default, the server connects using `https` on port `443`. If you're using BloodHound Community Edition with a different configuration, add these optional variables:
+   ```env
+   BLOODHOUND_PORT=8080
+   BLOODHOUND_SCHEME=http
+   ```
+
 ## Configuration
 
 ### Claude Desktop Setup
