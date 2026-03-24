@@ -25,6 +25,7 @@ htmlcov/
 *.log
 .claude/
 .claude_checkpoint.md
+archive/
 # mac files
 .DS_Store
 .AppleDouble
