@@ -1,15 +1,13 @@
 #!/usr/bin/python3
 """
-MCP Server for BloodHound 
+MCP Server for BloodHound
 This server acts as an interface between an LLM and the BloodHound Server
 v2.0
 Trying to be more token iffecient
 """
-import argparse
+
 import json
 import logging
-import os
-from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
@@ -17,7 +15,11 @@ from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
 # Import Bloodhound API client
-from lib.bloodhound_api import BloodhoundAPI, BloodhoundAPIError, BloodhoundConnectionError
+from lib.bloodhound_api import (
+    BloodhoundAPI,
+    BloodhoundAPIError,
+    BloodhoundConnectionError,
+)
 
 # Set up logging
 logging.basicConfig(
@@ -33,6 +35,7 @@ load_dotenv()
 mcp = FastMCP("bloodhound_mcp")
 bloodhound_api = BloodhoundAPI()
 
+
 # Helper function
 # eliminates repitiver error handling boilerplate that was in all of the tools.
 def _handle_tool_call(info_type: str, handlers: dict, **context):
@@ -40,16 +43,12 @@ def _handle_tool_call(info_type: str, handlers: dict, **context):
     handler = handlers.get(info_type)
     if not handler:
         valid = ", ".join(sorted(handlers.keys()))
-        return json.dumps({
-            "error": f"Unknown info_type '{info_type}'. Valid options: {valid}"
-        })
+        return json.dumps(
+            {"error": f"Unknown info_type '{info_type}'. Valid options: {valid}"}
+        )
     try:
-        result = handlers()
-        return json.dumps({
-            "info_type": info_type,
-            "data": result,
-            **context
-        })
+        result = handler()
+        return json.dumps({"info_type": info_type, "data": result, **context})
     except BloodhoundConnectionError as e:
         return json.dumps({"error": f"Connection error: {str(e)}"})
     except BloodhoundAPIError as e:
@@ -57,33 +56,56 @@ def _handle_tool_call(info_type: str, handlers: dict, **context):
     except Exception as e:
         logger.error(f"Error in {info_type}: {str(e)}")
         return json.dumps({"error": f"Unexpected error in {info_type}: {str(e)}"})
-    
-#Create the prompts
-#Slimmed down prompt with instructuons to use resources for more information
+
+
+# Create the prompts
+# Slimmed down prompt with instructuons to use resources for more information
 @mcp.prompt()
 def bloodhound_assistant() -> str:
     return """You are a security analysis assistant for BloodHound.
 
     You help analyze attack paths and security relationships across:
-    - Active directory (users, computers, groups, GPOs, OUs, ADCS, etc.)
-    - Azure / Entra ID (Users, grous, apps, service principals, tenants)
-    - Other infrastructure via OpenGraph (user definded noded types, edges, and relationships)
+    - Active Directory (users, computers, groups, GPOs, OUs, ADCS, etc.)
+    - Azure / Entra ID (users, groups, apps, service principals, tenants)
+    - Other infrastructure via OpenGraph (user-defined node types, edges, and relationships)
 
     BloodHound models all of these as a unified graph.
-    Relationships between standard AD/Entra objects and Custom OpenGraph nodes enabled attack path
-    analysis across the full environment not just Active Directory.
+    Relationships between standard AD/Entra objects and Custom OpenGraph nodes enable attack path
+    analysis across the full environment, not just Active Directory.
 
     ## Workflow
     1. Use domain_info(info_type="search", query="...") to find objects by name or ID
-    2. Use composite tools to drill into specific objects or request all of the information about the object
+    2. Use composite tools to drill into specific objects or request all information about the object
     3. Use cypher_query(info_type="run") for advanced cross-domain analysis
     4. Use custom_nodes to manage OpenGraph node type configurations
     5. For Azure: prefer Cypher queries over REST API tools
-    6. For OpenGraph: prompt the user for OpenGraph Schema and example queries, then use these to create cypher queries
+    6. For OpenGraph: prompt the user for OpenGraph schema and example queries, then use these to create Cypher queries
+
+    ## Behavioral Rules — Follow These Before Writing Cypher
+    1. Before writing custom Cypher for any offensive scenario (DCSync, GPO abuse, delegation,
+       Kerberoasting, file servers, shadow credentials, NTLM relay, ADCS, infrastructure enumeration),
+       load bloodhound://cypher/offensive-queries and use the relevant template as a starting point.
+    2. Never label a user as "regular", "non-privileged", or "standard" without first verifying group
+       memberships: MATCH (u:User {objectid: $id})-[:MemberOf*1..]->(g:Group) RETURN g.name
+    3. Never label a computer as a "workstation" without checking operatingsystem and DC status.
+    4. When results contain User or Computer nodes, cross-reference admincount, group memberships,
+       and enabled status before drawing privilege conclusions.
+    5. All BloodHound node properties are lowercase: hasspn, enabled, admincount, dontreqpreauth,
+       unconstraineddelegation. List properties (serviceprincipalnames, etc.) require
+       COALESCE(n.serviceprincipalnames, []) to avoid null errors.
+    6. BloodHound stores names as UPPERCASE with domain suffix: 'DOMAIN ADMINS@CORP.LOCAL'.
+       Use TOUPPER() or exact uppercase strings when filtering by name.
+    7. DCSync rights target Domain nodes, not Groups. Always query:
+       MATCH (n)-[:DCSync|GetChanges|GetChangesAll]->(d:Domain)
+    8. GPO abuse requires the full chain: principal -> write edge -> GPO -> GPLink -> OU -> Contains -> targets.
+       Never skip intermediate nodes — the GPLink edge goes FROM the GPO TO the container.
+    9. Load bloodhound://cypher/reference when in doubt about schema, property names, or syntax.
 
     ## Resources
     Quick reference (load as needed):
-    - bloodhound://cypher/reference — Cypher syntax, patterns, examples, and GUI caveats
+    - bloodhound://cypher/reference — Cypher syntax, schema, property names, and examples
+    - bloodhound://cypher/offensive-queries — Battle-tested templates for DCSync, GPO abuse,
+      Kerberoasting, delegation, ADCS, infrastructure enumeration, shadow credentials, and more
     - bloodhound://guides/ad — AD node types, relationships, tool workflow
     - bloodhound://guides/azure — Azure/Entra analysis quick reference
     - bloodhound://guides/adcs — ADCS ESC1-ESC13 quick reference
@@ -100,10 +122,12 @@ def bloodhound_assistant() -> str:
     Each tool's info_type parameter controls what data is retrieved.
 """
 
-# Create the tools
-#going with composite tools to cut down on the tokens
 
-#domain info composite tool
+# Create the tools
+# going with composite tools to cut down on the tokens
+
+
+# domain info composite tool
 @mcp.tool()
 def domain_info(
     info_type: str = "list",
@@ -112,7 +136,7 @@ def domain_info(
     object_type: str = None,
     limit: int = 100,
     skip: int = 0,
-)-> str:
+) -> str:
     """Query domain level data from BloodHound
     info_type options:
         list - list all domains (no domain_id needed)
@@ -139,26 +163,56 @@ def domain_info(
         skip: Pagination offset (default 0)
     """
     handlers = {
-        "list":                    lambda: bloodhound_api.domains.get_all(),
-        "search":                  lambda: bloodhound_api.domains.search_objects(query, object_type, limit=limit, skip=skip),
-        "users":                   lambda: bloodhound_api.domains.get_users(domain_id, limit=limit, skip=skip),
-        "groups":                  lambda: bloodhound_api.domains.get_groups(domain_id, limit=limit, skip=skip),
-        "computers":               lambda: bloodhound_api.domains.get_computers(domain_id, limit=limit, skip=skip),
-        "controllers":             lambda: bloodhound_api.domains.get_controllers(domain_id, limit=limit, skip=skip),
-        "gpos":                    lambda: bloodhound_api.domains.get_gpos(domain_id, limit=limit, skip=skip),
-        "ous":                     lambda: bloodhound_api.domains.get_ous(domain_id, limit=limit, skip=skip),
-        "dc_syncers":              lambda: bloodhound_api.domains.get_dc_syncers(domain_id, limit=limit, skip=skip),
-        "foreign_admins":          lambda: bloodhound_api.domains.get_foreign_admins(domain_id, limit=limit, skip=skip),
-        "foreign_gpo_controllers": lambda: bloodhound_api.domains.get_foreign_gpo_controllers(domain_id, limit=limit, skip=skip),
-        "foreign_groups":          lambda: bloodhound_api.domains.get_foreign_groups(domain_id, limit=limit, skip=skip),
-        "foreign_users":           lambda: bloodhound_api.domains.get_foreign_users(domain_id, limit=limit, skip=skip),
-        "inbound_trusts":          lambda: bloodhound_api.domains.get_inbound_trusts(domain_id, limit=limit, skip=skip),
-        "outbound_trusts":         lambda: bloodhound_api.domains.get_outbound_trusts(domain_id, limit=limit, skip=skip),
+        "list": lambda: bloodhound_api.domains.get_all(),
+        "search": lambda: bloodhound_api.domains.search_objects(
+            query, object_type, limit=limit, skip=skip
+        ),
+        "users": lambda: bloodhound_api.domains.get_users(
+            domain_id, limit=limit, skip=skip
+        ),
+        "groups": lambda: bloodhound_api.domains.get_groups(
+            domain_id, limit=limit, skip=skip
+        ),
+        "computers": lambda: bloodhound_api.domains.get_computers(
+            domain_id, limit=limit, skip=skip
+        ),
+        "controllers": lambda: bloodhound_api.domains.get_controllers(
+            domain_id, limit=limit, skip=skip
+        ),
+        "gpos": lambda: bloodhound_api.domains.get_gpos(
+            domain_id, limit=limit, skip=skip
+        ),
+        "ous": lambda: bloodhound_api.domains.get_ous(
+            domain_id, limit=limit, skip=skip
+        ),
+        "dc_syncers": lambda: bloodhound_api.domains.get_dc_syncers(
+            domain_id, limit=limit, skip=skip
+        ),
+        "foreign_admins": lambda: bloodhound_api.domains.get_foreign_admins(
+            domain_id, limit=limit, skip=skip
+        ),
+        "foreign_gpo_controllers": lambda: (
+            bloodhound_api.domains.get_foreign_gpo_controllers(
+                domain_id, limit=limit, skip=skip
+            )
+        ),
+        "foreign_groups": lambda: bloodhound_api.domains.get_foreign_groups(
+            domain_id, limit=limit, skip=skip
+        ),
+        "foreign_users": lambda: bloodhound_api.domains.get_foreign_users(
+            domain_id, limit=limit, skip=skip
+        ),
+        "inbound_trusts": lambda: bloodhound_api.domains.get_inbound_trusts(
+            domain_id, limit=limit, skip=skip
+        ),
+        "outbound_trusts": lambda: bloodhound_api.domains.get_outbound_trusts(
+            domain_id, limit=limit, skip=skip
+        ),
     }
     return _handle_tool_call(info_type, handlers)
 
 
-#User info composite tool
+# User info composite tool
 @mcp.tool()
 def user_info(
     user_id: str,
@@ -187,21 +241,44 @@ def user_info(
         skip: Pagination offset (default 0)
     """
     handlers = {
-        "info":                   lambda: bloodhound_api.users.get_info(user_id),
-        "admin_rights":           lambda: bloodhound_api.users.get_admin_rights(user_id, limit=limit, skip=skip),
-        "constrained_delegation": lambda: bloodhound_api.users.get_constrained_delegation_rights(user_id, limit=limit, skip=skip),
-        "controllables":          lambda: bloodhound_api.users.get_controllables(user_id, limit=limit, skip=skip),
-        "controllers":            lambda: bloodhound_api.users.get_controllers(user_id, limit=limit, skip=skip),
-        "dcom_rights":           lambda: bloodhound_api.users.get_dcom_rights(user_id, limit=limit, skip=skip),
-        "memberships":           lambda: bloodhound_api.users.get_memberships(user_id, limit=limit, skip=skip),
-        "ps_remote_rights":      lambda: bloodhound_api.users.get_ps_remote_rights(user_id, limit=limit, skip=skip),
-        "rdp_rights":           lambda: bloodhound_api.users.get_rdp_rights(user_id, limit=limit, skip=skip),
-        "sessions":             lambda: bloodhound_api.users.get_sessions(user_id, limit=limit, skip=skip),
-        "sql_admin_rights":     lambda: bloodhound_api.users.get_sql_admin_rights(user_id, limit=limit, skip=skip),
+        "info": lambda: bloodhound_api.users.get_info(user_id),
+        "admin_rights": lambda: bloodhound_api.users.get_admin_rights(
+            user_id, limit=limit, skip=skip
+        ),
+        "constrained_delegation": lambda: (
+            bloodhound_api.users.get_constrained_delegation_rights(
+                user_id, limit=limit, skip=skip
+            )
+        ),
+        "controllables": lambda: bloodhound_api.users.get_controllables(
+            user_id, limit=limit, skip=skip
+        ),
+        "controllers": lambda: bloodhound_api.users.get_controllers(
+            user_id, limit=limit, skip=skip
+        ),
+        "dcom_rights": lambda: bloodhound_api.users.get_dcom_rights(
+            user_id, limit=limit, skip=skip
+        ),
+        "memberships": lambda: bloodhound_api.users.get_memberships(
+            user_id, limit=limit, skip=skip
+        ),
+        "ps_remote_rights": lambda: bloodhound_api.users.get_ps_remote_rights(
+            user_id, limit=limit, skip=skip
+        ),
+        "rdp_rights": lambda: bloodhound_api.users.get_rdp_rights(
+            user_id, limit=limit, skip=skip
+        ),
+        "sessions": lambda: bloodhound_api.users.get_sessions(
+            user_id, limit=limit, skip=skip
+        ),
+        "sql_admin_rights": lambda: bloodhound_api.users.get_sql_admin_rights(
+            user_id, limit=limit, skip=skip
+        ),
     }
     return _handle_tool_call(info_type, handlers, user_id=user_id)
 
-#group info composite tool
+
+# group info composite tool
 @mcp.tool()
 def group_info(
     group_id: str,
@@ -228,20 +305,39 @@ def group_info(
         skip: Pagination offset (default 0)
     """
     handlers = {
-        "info":           lambda: bloodhound_api.groups.get_info(group_id),
-        "admin_rights":   lambda: bloodhound_api.groups.get_admin_rights(group_id, limit=limit, skip=skip),
-        "controllables":  lambda: bloodhound_api.groups.get_controllables(group_id, limit=limit, skip=skip),
-        "controllers":    lambda: bloodhound_api.groups.get_controllers(group_id, limit=limit, skip=skip),
-        "dcom_rights":   lambda: bloodhound_api.groups.get_dcom_rights(group_id, limit=limit, skip=skip),
-        "members":       lambda: bloodhound_api.groups.get_members(group_id, limit=limit, skip=skip),
-        "memberships":   lambda: bloodhound_api.groups.get_memberships(group_id, limit=limit, skip=skip),
-        "ps_remote_rights":  lambda: bloodhound_api.groups.get_ps_remote_rights(group_id, limit=limit, skip=skip),
-        "rdp_rights":     lambda: bloodhound_api.groups.get_rdp_rights(group_id, limit=limit, skip=skip),
-        "sessions":       lambda: bloodhound_api.groups.get_sessions(group_id, limit=limit, skip=skip),
+        "info": lambda: bloodhound_api.groups.get_info(group_id),
+        "admin_rights": lambda: bloodhound_api.groups.get_admin_rights(
+            group_id, limit=limit, skip=skip
+        ),
+        "controllables": lambda: bloodhound_api.groups.get_controllables(
+            group_id, limit=limit, skip=skip
+        ),
+        "controllers": lambda: bloodhound_api.groups.get_controllers(
+            group_id, limit=limit, skip=skip
+        ),
+        "dcom_rights": lambda: bloodhound_api.groups.get_dcom_rights(
+            group_id, limit=limit, skip=skip
+        ),
+        "members": lambda: bloodhound_api.groups.get_members(
+            group_id, limit=limit, skip=skip
+        ),
+        "memberships": lambda: bloodhound_api.groups.get_memberships(
+            group_id, limit=limit, skip=skip
+        ),
+        "ps_remote_rights": lambda: bloodhound_api.groups.get_ps_remote_rights(
+            group_id, limit=limit, skip=skip
+        ),
+        "rdp_rights": lambda: bloodhound_api.groups.get_rdp_rights(
+            group_id, limit=limit, skip=skip
+        ),
+        "sessions": lambda: bloodhound_api.groups.get_sessions(
+            group_id, limit=limit, skip=skip
+        ),
     }
     return _handle_tool_call(info_type, handlers, group_id=group_id)
 
-#computer info composite tool
+
+# computer info composite tool
 @mcp.tool()
 def computer_info(
     computer_id: str,
@@ -275,26 +371,59 @@ def computer_info(
         skip: Pagination offset (default 0)
     """
     handlers = {
-        "info":                   lambda: bloodhound_api.computers.get_info(computer_id),
-        "admin_rights":           lambda: bloodhound_api.computers.get_admin_rights(computer_id, limit=limit, skip=skip),
-        "admin_users":            lambda: bloodhound_api.computers.get_admin_users(computer_id, limit=limit, skip=skip),
-        "constrained_delegation": lambda: bloodhound_api.computers.get_constrained_delegation_rights(computer_id, limit=limit, skip=skip),
-        "constrained_users":      lambda: bloodhound_api.computers.get_constrained_users(computer_id, limit=limit, skip=skip),
-        "controllables":          lambda: bloodhound_api.computers.get_controllables(computer_id, limit=limit, skip=skip),
-        "controllers":            lambda: bloodhound_api.computers.get_controllers(computer_id, limit=limit, skip=skip),
-        "dcom_rights":           lambda: bloodhound_api.computers.get_dcom_rights(computer_id, limit=limit, skip=skip),
-        "dcom_users":            lambda: bloodhound_api.computers.get_dcom_users(computer_id, limit=limit, skip=skip),
-        "group_membership":      lambda: bloodhound_api.computers.get_group_membership(computer_id, limit=limit, skip=skip),
-        "ps_remote_rights":      lambda: bloodhound_api.computers.get_ps_remote_rights(computer_id, limit=limit, skip=skip),
-        "ps_remote_users":       lambda: bloodhound_api.computers.get_ps_remote_users(computer_id, limit=limit, skip=skip),
-        "rdp_rights":           lambda: bloodhound_api.computers.get_rdp_rights(computer_id, limit=limit, skip=skip),
-        "rdp_users":            lambda: bloodhound_api.computers.get_rdp_users(computer_id, limit=limit, skip=skip),
-        "sessions":             lambda: bloodhound_api.computers.get_sessions(computer_id, limit=limit, skip=skip),
-        "sql_admins":           lambda: bloodhound_api.computers.get_sql_admins(computer_id, limit=limit, skip=skip),
+        "info": lambda: bloodhound_api.computers.get_info(computer_id),
+        "admin_rights": lambda: bloodhound_api.computers.get_admin_rights(
+            computer_id, limit=limit, skip=skip
+        ),
+        "admin_users": lambda: bloodhound_api.computers.get_admin_users(
+            computer_id, limit=limit, skip=skip
+        ),
+        "constrained_delegation": lambda: (
+            bloodhound_api.computers.get_constrained_delegation_rights(
+                computer_id, limit=limit, skip=skip
+            )
+        ),
+        "constrained_users": lambda: bloodhound_api.computers.get_constrained_users(
+            computer_id, limit=limit, skip=skip
+        ),
+        "controllables": lambda: bloodhound_api.computers.get_controllables(
+            computer_id, limit=limit, skip=skip
+        ),
+        "controllers": lambda: bloodhound_api.computers.get_controllers(
+            computer_id, limit=limit, skip=skip
+        ),
+        "dcom_rights": lambda: bloodhound_api.computers.get_dcom_rights(
+            computer_id, limit=limit, skip=skip
+        ),
+        "dcom_users": lambda: bloodhound_api.computers.get_dcom_users(
+            computer_id, limit=limit, skip=skip
+        ),
+        "group_membership": lambda: bloodhound_api.computers.get_group_membership(
+            computer_id, limit=limit, skip=skip
+        ),
+        "ps_remote_rights": lambda: bloodhound_api.computers.get_ps_remote_rights(
+            computer_id, limit=limit, skip=skip
+        ),
+        "ps_remote_users": lambda: bloodhound_api.computers.get_ps_remote_users(
+            computer_id, limit=limit, skip=skip
+        ),
+        "rdp_rights": lambda: bloodhound_api.computers.get_rdp_rights(
+            computer_id, limit=limit, skip=skip
+        ),
+        "rdp_users": lambda: bloodhound_api.computers.get_rdp_users(
+            computer_id, limit=limit, skip=skip
+        ),
+        "sessions": lambda: bloodhound_api.computers.get_sessions(
+            computer_id, limit=limit, skip=skip
+        ),
+        "sql_admins": lambda: bloodhound_api.computers.get_sql_admins(
+            computer_id, limit=limit, skip=skip
+        ),
     }
     return _handle_tool_call(info_type, handlers, computer_id=computer_id)
 
-#Organizational Unit info composite tool
+
+# Organizational Unit info composite tool
 @mcp.tool()
 def ou_info(
     ou_id: str,
@@ -316,13 +445,16 @@ def ou_info(
     skip: Pagination offset (default 0)
     """
     handlers = {
-        "info":      lambda: bloodhound_api.ous.get_info(ou_id),
-        "computers": lambda: bloodhound_api.ous.get_computers(ou_id, limit=limit, skip=skip),
-        "groups":    lambda: bloodhound_api.ous.get_groups(ou_id, limit=limit, skip=skip),
-        "gpos":      lambda: bloodhound_api.ous.get_gpos(ou_id, limit=limit, skip=skip),
-        "users":     lambda: bloodhound_api.ous.get_users(ou_id, limit=limit, skip=skip),
+        "info": lambda: bloodhound_api.ous.get_info(ou_id),
+        "computers": lambda: bloodhound_api.ous.get_computers(
+            ou_id, limit=limit, skip=skip
+        ),
+        "groups": lambda: bloodhound_api.ous.get_groups(ou_id, limit=limit, skip=skip),
+        "gpos": lambda: bloodhound_api.ous.get_gpos(ou_id, limit=limit, skip=skip),
+        "users": lambda: bloodhound_api.ous.get_users(ou_id, limit=limit, skip=skip),
     }
     return _handle_tool_call(info_type, handlers, ou_id=ou_id)
+
 
 # Group Policy Object info composite tool
 @mcp.tool()
@@ -347,14 +479,21 @@ def gpo_info(
         skip: Pagination offset (default 0)
     """
     handlers = {
-        "info":      lambda: bloodhound_api.gpos.get_info(gpo_id),
-        "computers": lambda: bloodhound_api.gpos.get_computers(gpo_id, limit=limit, skip=skip),
-        "controllers":lambda: bloodhound_api.gpos.get_controllers(gpo_id, limit=limit, skip=skip),
-        "ous":       lambda: bloodhound_api.gpos.get_ous(gpo_id, limit=limit, skip=skip),
-        "tier_zeros":lambda: bloodhound_api.gpos.get_tier_zeros(gpo_id, limit=limit, skip=skip),
-        "users":     lambda: bloodhound_api.gpos.get_users(gpo_id, limit=limit, skip=skip),
+        "info": lambda: bloodhound_api.gpos.get_info(gpo_id),
+        "computers": lambda: bloodhound_api.gpos.get_computers(
+            gpo_id, limit=limit, skip=skip
+        ),
+        "controllers": lambda: bloodhound_api.gpos.get_controllers(
+            gpo_id, limit=limit, skip=skip
+        ),
+        "ous": lambda: bloodhound_api.gpos.get_ous(gpo_id, limit=limit, skip=skip),
+        "tier_zeros": lambda: bloodhound_api.gpos.get_tier_zeros(
+            gpo_id, limit=limit, skip=skip
+        ),
+        "users": lambda: bloodhound_api.gpos.get_users(gpo_id, limit=limit, skip=skip),
     }
     return _handle_tool_call(info_type, handlers, gpo_id=gpo_id)
+
 
 # Graph analysis composte tool
 @mcp.tool()
@@ -368,9 +507,9 @@ def graph_analysis(
     target_node: str = None,
     edge_type: str = None,
     relationship_kinds: str = None,
-)-> str:
+) -> str:
     """Perform graph analysis operations in BloodHound
-    
+
     info_type options:
         search - search for nodes by name (needs: query; optional: search_type)
         shortest_path - find shortest attack path between two nodes (needs: start_node, end_node; optional relationship_kinds)
@@ -389,12 +528,30 @@ def graph_analysis(
         relationship_kinds: Comma-separated relationship filter (for shortest_path, optional)
     """
     handlers = {
-        "search":            lambda: bloodhound_api.graph.search(query, search_type),
-        "shortest_path":     lambda: bloodhound_api.graph.get_shortest_path(start_node, end_node, relationship_kinds),
-        "edge_composition":  lambda: bloodhound_api.graph.get_edge_composition(source_node, target_node, edge_type),
-        "relay_targets":     lambda: bloodhound_api.graph.get_relay_targets(source_node, target_node, edge_type),
+        "search": lambda: bloodhound_api.graph.search(query, search_type),
+        "shortest_path": lambda: bloodhound_api.graph.get_shortest_path(
+            start_node, end_node, relationship_kinds
+        ),
+        "edge_composition": lambda: bloodhound_api.graph.get_edge_composition(
+            source_node, target_node, edge_type
+        ),
+        "relay_targets": lambda: bloodhound_api.graph.get_relay_targets(
+            source_node, target_node, edge_type
+        ),
     }
-    return _handle_tool_call(info_type, handlers, query=query, search_type=search_type, start_node=start_node, end_node=end_node, source_node=source_node, target_node=target_node, edge_type=edge_type, relationship_kinds=relationship_kinds)
+    return _handle_tool_call(
+        info_type,
+        handlers,
+        query=query,
+        search_type=search_type,
+        start_node=start_node,
+        end_node=end_node,
+        source_node=source_node,
+        target_node=target_node,
+        edge_type=edge_type,
+        relationship_kinds=relationship_kinds,
+    )
+
 
 # Active Directory Certificate Services composite tool
 @mcp.tool()
@@ -422,15 +579,32 @@ def adcs_info(
         skip: Pagination offset (default 0)
     """
     handlers = {
-        "cert_template_info":           lambda: bloodhound_api.adcs.get_cert_template_info(object_id),
-        "cert_template_controllers":    lambda: bloodhound_api.adcs.get_cert_template_controllers(object_id, limit=limit, skip=skip),
-        "root_ca_info":                lambda: bloodhound_api.adcs.get_root_ca_info(object_id),
-        "root_ca_controllers":         lambda: bloodhound_api.adcs.get_root_ca_controllers(object_id, limit=limit, skip=skip),
-        "enterprise_ca_info":          lambda: bloodhound_api.adcs.get_enterprise_ca_info(object_id),
-        "enterprise_ca_controllers":   lambda: bloodhound_api.adcs.get_enterprise_ca_controllers(object_id, limit=limit, skip=skip),
-        "aia_ca_controllers":         lambda: bloodhound_api.adcs.get_aia_ca_controllers(object_id, limit=limit, skip=skip),
+        "cert_template_info": lambda: bloodhound_api.adcs.get_cert_template_info(
+            object_id
+        ),
+        "cert_template_controllers": lambda: (
+            bloodhound_api.adcs.get_cert_template_controllers(
+                object_id, limit=limit, skip=skip
+            )
+        ),
+        "root_ca_info": lambda: bloodhound_api.adcs.get_root_ca_info(object_id),
+        "root_ca_controllers": lambda: bloodhound_api.adcs.get_root_ca_controllers(
+            object_id, limit=limit, skip=skip
+        ),
+        "enterprise_ca_info": lambda: bloodhound_api.adcs.get_enterprise_ca_info(
+            object_id
+        ),
+        "enterprise_ca_controllers": lambda: (
+            bloodhound_api.adcs.get_enterprise_ca_controllers(
+                object_id, limit=limit, skip=skip
+            )
+        ),
+        "aia_ca_controllers": lambda: bloodhound_api.adcs.get_aia_ca_controllers(
+            object_id, limit=limit, skip=skip
+        ),
     }
     return _handle_tool_call(info_type, handlers, object_id=object_id)
+
 
 # Cypher query composite tool
 @mcp.tool()
@@ -446,9 +620,9 @@ def cypher_query(
     public: bool = False,
     limit: int = 100,
     skip: int = 0,
-)-> str:
+) -> str:
     """Execute and manage Cypher queries in BloodHound.
-    
+
     info_type options:
         run - execute a cypher query (needs: query; optional: include_properties)
         interpret - interpret a natural language query into cypher (needs: query, result_json)
@@ -473,22 +647,26 @@ def cypher_query(
         limit: Max results (default 100)
         skip: Pagination offset (default 0)
     """
-    #run and interpret have special handling
+    # run and interpret have special handling
     if info_type == "run":
         return _cypher_run(query, include_properties)
     elif info_type == "interpret":
         return _cypher_interpret(query, result_json)
-    #standard dispatch for saved query CRUD
+    # standard dispatch for saved query CRUD
     handlers = {
-        "list_saved": lambda: bloodhound_api.cypher.list_saved_queries(skip, limit, name),
+        "list_saved": lambda: bloodhound_api.cypher.list_saved_queries(
+            skip, limit, name
+        ),
         "create_saved": lambda: bloodhound_api.cypher.create_saved_query(name, query),
         "get_saved": lambda: bloodhound_api.cypher.get_saved_query(query_id),
-        "update_saved": lambda: bloodhound_api.cypher.update_saved_query(query_id, name, query, description),
+        "update_saved": lambda: bloodhound_api.cypher.update_saved_query(
+            query_id, name, query, description
+        ),
         "delete_saved": lambda: bloodhound_api.cypher.delete_saved_query(query_id),
         "share_saved": lambda: bloodhound_api.cypher.share_saved_query(
             query_id,
             [int(uid.strip()) for uid in user_ids.split(",")] if user_ids else [],
-            public
+            public,
         ),
         "validate": lambda: bloodhound_api.cypher.validate_query(query),
     }
@@ -499,66 +677,90 @@ def _cypher_run(query: str, include_properties: bool = True) -> str:
     """Execute a Cypher query with proper HTTP Status interpretation"""
     try:
         result = bloodhound_api.cypher.run_query(query, include_properties)
-        #handle metadat enriched resposne formmat
+        # handle metadat enriched resposne formmat
         if isinstance(result, dict) and "metadata" in result:
             has_results = result["metadata"].get("has_result", True)
             result_data = result.get("data", result)
         else:
             result_data = result
             has_results = bool(result_data.get("nodes") or result_data.get("edges"))
-        return json.dumps({
-            "info_type": "run",
-            "success": True,
-            "has_results": has_results,
-            "data": result_data,
-            "node_count": len(result_data.get("nodes", [])),
-            "edge_count": len(result_data.get("edges", [])),
-        })
+        return json.dumps(
+            {
+                "info_type": "run",
+                "success": True,
+                "has_results": has_results,
+                "data": result_data,
+                "node_count": len(result_data.get("nodes", [])),
+                "edge_count": len(result_data.get("edges", [])),
+            }
+        )
     except BloodhoundAPIError as e:
-        #TODO: expand this with more specific error handling based on status codes and error messages from the BloodHound API
-        #Bloodhound errors are not specific and just give you the status number, this kinda sucks for this
+        # Error handling based on status codes; BH errors are not very descriptive beyond the status number
+        # Future: expand with more specific messages as the BH API improves error responses
         error_map = {
-            400: ("syntax_error", "check node labels, relationship types, and property names"),
-            401: ("auth_error", "authentication failed - check credentials and permissions"),
+            400: (
+                "syntax_error",
+                "check node labels, relationship types, and property names",
+            ),
+            401: (
+                "auth_error",
+                "authentication failed - check credentials and permissions",
+            ),
             403: ("permission_error", "you do not have permission to run this query"),
             404: ("not_found", "the query does not have any results"),
-            500: ("server_failure", "the query may have returned too much data, try using a limit"),
+            500: (
+                "server_failure",
+                "the query may have returned too much data, try using a limit",
+            ),
         }
         if e.status_code in error_map:
             etype, hint = error_map[e.status_code]
-            return json.dumps({"success": False, "error_type": etype, "error":str(e), "hint": hint})
+            return json.dumps(
+                {"success": False, "error_type": etype, "error": str(e), "hint": hint}
+            )
         if e.status_code > 500:
-            return json.dumps({"success": False, "error_type": "server_error", "error": str(e)})
-        return json.dumps({"success": False, "error":str(e)})
+            return json.dumps(
+                {"success": False, "error_type": "server_error", "error": str(e)}
+            )
+        return json.dumps({"success": False, "error": str(e)})
 
-# This entire function may be completely unneeded. I need to do some A B testing to see if this is providing value or just add extra steps
-#TODO: A B Testing with this function existing or not existing.
+
+# Note: this function may be redundant — needs A/B testing to confirm it adds value vs just extra steps
 def _cypher_interpret(query: str, result_json: str) -> str:
     """interpret cypher results for offensive security context"""
     try:
-        result = json.loads(result_json) if isinstance(result_json, str) else result_json
+        result = (
+            json.loads(result_json) if isinstance(result_json, str) else result_json
+        )
         if not result.get("success", False):
-            return json.dumps({
-                "info_type": "interpret",
-                "interpretation": "Query failed - see error details in the result",
-                "error": result.get("error", "Unknown")
-            })
+            return json.dumps(
+                {
+                    "info_type": "interpret",
+                    "interpretation": "Query failed - see error details in the result",
+                    "error": result.get("error", "Unknown"),
+                }
+            )
         nodes = result.get("data", {}).get("nodes", [])
         edges = result.get("data", {}).get("edges", [])
-        return json.dumps({
-            "info_type": "interpret",
-            "nodes_found": len(nodes),
-            "edges_found": len(edges),
-            "has_results": len(nodes) > 0 or len(edges) > 0,
-        })
+        return json.dumps(
+            {
+                "info_type": "interpret",
+                "nodes_found": len(nodes),
+                "edges_found": len(edges),
+                "has_results": len(nodes) > 0 or len(edges) > 0,
+            }
+        )
     except Exception as e:
-        return json.dumps({
-            "info_type": "interpret",
-            "interpretation": "Failed to interpret query results",
-            "error": str(e)
-        })
+        return json.dumps(
+            {
+                "info_type": "interpret",
+                "interpretation": "Failed to interpret query results",
+                "error": str(e),
+            }
+        )
 
-#data quality composite tool
+
+# data quality composite tool
 @mcp.tool()
 def data_quality(
     info_type: str = "completeness",
@@ -570,7 +772,7 @@ def data_quality(
     sort_by: str = None,
     skip: int = 0,
     limit: int = 100,
-)-> str:
+) -> str:
     """Query data quality and collection statistics from BloodHound
     info_type options:
         completeness - overall database completeness stats (no params needed)
@@ -586,21 +788,26 @@ def data_quality(
     end: end datetime in RFC-3339 format
     sort_by: Sort field - "created_at" or "updated_at" (optional)
     skip: Pagination offset (default 0)
-    limit: max results (default 100)  
+    limit: max results (default 100)
     """
     handlers = {
         "completeness": lambda: bloodhound_api.data_quality.get_completeness_stats(),
-        "ad_domain":    lambda: bloodhound_api.data_quality.get_ad_domain_data_quality_stats(
-            domain_id, start, end, sort_by, skip, limit
+        "ad_domain": lambda: (
+            bloodhound_api.data_quality.get_ad_domain_data_quality_stats(
+                domain_id, start, end, sort_by, skip, limit
+            )
         ),
-        "azure_tenant": lambda: bloodhound_api.data_quality.get_azure_tenant_data_quality_stats(
-            tenant_id, start, end, sort_by, skip, limit
+        "azure_tenant": lambda: (
+            bloodhound_api.data_quality.get_azure_tenant_data_quality_stats(
+                tenant_id, start, end, sort_by, skip, limit
+            )
         ),
-        "platform":     lambda: bloodhound_api.data_quality.get_platform_data_quality_stats(
+        "platform": lambda: bloodhound_api.data_quality.get_platform_data_quality_stats(
             platform_id, start, end, sort_by, skip, limit
         ),
     }
     return _handle_tool_call(info_type, handlers)
+
 
 # Custom OpenGraph nodes composite tool
 @mcp.tool()
@@ -627,24 +834,34 @@ def custom_nodes(
         config_json: JSON string for updating a node kind's display config (for update)
         icon_config_json: JSON string for validating icon config (for validate_icon)
     """
+
     def _create():
         types = json.loads(custom_types_json)
         for name, config in types.items():
             if "icon" in config:
-                validation = bloodhound_api.custom_nodes.validate_icon_config(config["icon"])
+                validation = bloodhound_api.custom_nodes.validate_icon_config(
+                    config["icon"]
+                )
                 if not validation["valid"]:
-                    return {"error": f"Invalid icon config for {name}: {validation['error']}"}
+                    return {
+                        "error": f"Invalid icon config for {name}: {validation['error']}"
+                    }
         return bloodhound_api.custom_nodes.create_custom_nodes(types)
+
     def _update():
         config = json.loads(config_json)
         if "icon" in config:
-            validation = bloodhound_api.custom_nodes.validate_icon_config(config["icon"])
+            validation = bloodhound_api.custom_nodes.validate_icon_config(
+                config["icon"]
+            )
             if not validation["valid"]:
                 return {"error": f"Invalid icon config: {validation['error']}"}
         return bloodhound_api.custom_nodes.update_custom_node(kind_name, config)
+
     def _validate_icon():
         icon = json.loads(icon_config_json)
         return bloodhound_api.custom_nodes.validate_icon_config(icon)
+
     handlers = {
         "list": lambda: bloodhound_api.custom_nodes.get_all_custom_nodes(),
         "get": lambda: bloodhound_api.custom_nodes.get_custom_node(kind_name),
@@ -654,6 +871,7 @@ def custom_nodes(
         "validate_icon": _validate_icon,
     }
     return _handle_tool_call(info_type, handlers)
+
 
 # Asset Group composite tool
 @mcp.tool()
@@ -670,7 +888,7 @@ def asset_groups(
     limit: int = 100,
 ) -> str:
     """Manage Asset isolation groups and tages in BloodHound
-    
+
     info_type options:
         list - list all asset groups (optional filters: name, tag, sort_by, system_group)
         get - get a specific asset group (requires: asset_group_id)
@@ -697,36 +915,47 @@ def asset_groups(
         limit: Max results (default 100)
     """
     handlers = {
-        "list":             lambda: bloodhound_api.asset_groups.list_asset_groups(
+        "list": lambda: bloodhound_api.asset_groups.list_asset_groups(
             sort_by=sort_by, name=name, tag=tag, system_group=system_group
         ),
-        "get":              lambda: bloodhound_api.asset_groups.get_asset_group(asset_group_id),
-        "create":           lambda: bloodhound_api.asset_groups.create_asset_group(name, tag),
-        "update":           lambda: bloodhound_api.asset_groups.update_asset_group(asset_group_id, name),
-        "delete":           lambda: bloodhound_api.asset_groups.delete_asset_group(asset_group_id),
-        "collections":      lambda: bloodhound_api.asset_groups.list_asset_group_collections(
+        "get": lambda: bloodhound_api.asset_groups.get_asset_group(asset_group_id),
+        "create": lambda: bloodhound_api.asset_groups.create_asset_group(name, tag),
+        "update": lambda: bloodhound_api.asset_groups.update_asset_group(
+            asset_group_id, name
+        ),
+        "delete": lambda: bloodhound_api.asset_groups.delete_asset_group(
+            asset_group_id
+        ),
+        "collections": lambda: bloodhound_api.asset_groups.list_asset_group_collections(
             asset_group_id, skip=skip, limit=limit
         ),
-        "member_counts":    lambda: bloodhound_api.asset_groups.list_asset_group_member_counts(asset_group_id),
-        "update_selectors": lambda: bloodhound_api.asset_groups.update_asset_group_selectors(
-            asset_group_id, json.loads(selectors_json)
+        "member_counts": lambda: (
+            bloodhound_api.asset_groups.list_asset_group_member_counts(asset_group_id)
         ),
-        "list_tags":        lambda: bloodhound_api.asset_groups.list_asset_group_tags(
+        "update_selectors": lambda: (
+            bloodhound_api.asset_groups.update_asset_group_selectors(
+                asset_group_id, json.loads(selectors_json)
+            )
+        ),
+        "list_tags": lambda: bloodhound_api.asset_groups.list_asset_group_tags(
             sort_by=sort_by, name=name, tag=tag, skip=skip, limit=limit
         ),
-        "create_tag":       lambda: bloodhound_api.asset_groups.create_asset_group_tag(name, tag),
-        "tag_members":      lambda: bloodhound_api.asset_groups.list_asset_group_tag_members(
+        "create_tag": lambda: bloodhound_api.asset_groups.create_asset_group_tag(
+            name, tag
+        ),
+        "tag_members": lambda: bloodhound_api.asset_groups.list_asset_group_tag_members(
             asset_group_tag_id, skip=skip, limit=limit
         ),
     }
     return _handle_tool_call(info_type, handlers)
 
+
 # MCP Resources
-#These are called by the main prompt
+# These are called by the main prompt
 # Cypher References
 @mcp.resource("bloodhound://cypher/reference")
 def cypher_reference() -> str:
-    """Cypher query sintax, patterns, and examples for BloodHound"""
+    """Cypher query syntax, schema, property names, patterns, and examples for BloodHound"""
     return """BloodHound Cypher Reference
     ============================
     Syntax Basics
@@ -749,13 +978,13 @@ def cypher_reference() -> str:
 
     Query Size Limits
     -----------------
-    A 500 error from the BloodHound API often means the query returned too much data. To avoid this, use pagination and filtering techniques:
+    A 500 error from the BloodHound API often means the query returned too much data.
     1. Add LIMIT to constrain result size: RETURN p LIMIT 100
     2. Use SKIP for pagination: RETURN p SKIP 100 LIMIT 100
     3. Chain paginated calls to build the full result set
     4. Add WHERE filters to narrow scope before pagination
 
-  Example — paginated path query:
+    Example — paginated path query:
     Page 1: MATCH p=(n)-[:MemberOf*1..]->(g:Group) RETURN p LIMIT 100
     Page 2: MATCH p=(n)-[:MemberOf*1..]->(g:Group) RETURN p SKIP 100 LIMIT 100
 
@@ -773,6 +1002,93 @@ def cypher_reference() -> str:
     Custom (OpenGraph):
     User-defined types (e.g., SQLServer, WebApp, NetworkDevice)
 
+    BH CE Property Reference — Exact Names and Types
+    -------------------------------------------------
+    IMPORTANT: All BloodHound property names are lowercase. Using wrong case causes queries to
+    silently return no results. Key properties by node type:
+
+    User / Computer (shared):
+    - enabled (boolean) — account is active
+    - admincount (boolean) — AdminSDHolder-protected; correlates with privilege but is not definitive
+    - objectid (string) — SID, e.g. "S-1-5-21-..."
+    - name (string) — UPPERCASE with domain suffix: "JSMITH@CORP.LOCAL"
+    - distinguishedname (string)
+    - description (string) — often contains passwords left by admins
+    - whencreated (integer) — epoch timestamp
+    - lastlogon / lastlogontimestamp (integer) — epoch timestamps
+    - system_tags (string) — contains 'owned', 'tier zero', etc.
+
+    User-specific:
+    - hasspn (boolean) — has Service Principal Names (Kerberoastable if enabled=true)
+    - dontreqpreauth (boolean) — AS-REP Roastable if true
+    - serviceprincipalnames (list of strings) — SPNs; use COALESCE(u.serviceprincipalnames, [])
+    - pwdlastset (integer) — epoch timestamp
+    - gmsa (boolean) — is a Group Managed Service Account
+    - msa (boolean) — is a Managed Service Account
+
+    Computer-specific:
+    - unconstraineddelegation (boolean) — has unconstrained Kerberos delegation
+    - operatingsystem (string) — e.g. "Windows Server 2019 Standard"
+    - serviceprincipalnames (list of strings) — use COALESCE(c.serviceprincipalnames, [])
+    - haslaps (boolean) — LAPS is configured on this computer
+
+    Domain-specific:
+    - objectid (string) — domain SID (S-1-5-21-...) used for trust/DCSync queries
+
+    Name Format Convention
+    ----------------------
+    BloodHound stores ALL names in UPPERCASE with the domain suffix appended:
+    - Groups:     "DOMAIN ADMINS@CORP.LOCAL"  (not "Domain Admins")
+    - Users:      "JSMITH@CORP.LOCAL"
+    - Computers:  "WS01.CORP.LOCAL"
+    - Domains:    "CORP.LOCAL"
+
+    When filtering by name, use exact uppercase strings or TOUPPER():
+    WRONG:  WHERE g.name = "Domain Admins"
+    CORRECT: WHERE g.name = "DOMAIN ADMINS@CORP.LOCAL"
+    CORRECT: WHERE TOUPPER(g.name) STARTS WITH "DOMAIN ADMINS"
+
+    COALESCE Patterns for List Properties
+    --------------------------------------
+    List properties (serviceprincipalnames, etc.) may be null. Always use COALESCE:
+    - Filter by SPN prefix:
+      WHERE ANY(spn IN COALESCE(n.serviceprincipalnames, []) WHERE spn STARTS WITH 'CIFS/')
+    - Collect with null safety:
+      RETURN COALESCE(u.serviceprincipalnames, []) AS spns
+    - Boolean null safety:
+      WHERE COALESCE(u.gmsa, false) = false
+      WHERE COALESCE(c.unconstraineddelegation, false) = true
+
+    DCSync Edge Clarification
+    -------------------------
+    IMPORTANT: DCSync rights target Domain nodes, NOT Group nodes.
+    The pre-computed DCSync edge AND the raw GetChanges/GetChangesAll edges all point to Domain.
+
+    WRONG:  MATCH (n)-[:DCSync]->(g:Group)   -- returns nothing
+    CORRECT: MATCH (n)-[:DCSync]->(d:Domain)
+
+    To find all principals with DCSync (both pre-computed edge and raw privileges):
+    MATCH (n)-[:DCSync|GetChanges|GetChangesAll]->(d:Domain)
+    RETURN n.name, labels(n) AS node_type, d.name AS domain
+
+    Note: A principal needs BOTH GetChanges AND GetChangesAll to perform DCSync.
+    The pre-computed DCSync edge represents this combined condition.
+
+    GPO Abuse Path Structure
+    ------------------------
+    GPO abuse requires traversing the full chain — never skip intermediate nodes:
+    principal -[write edge]-> GPO -[GPLink]-> OU/Container -[Contains*1..]-> targets
+
+    Write edges on GPOs: GenericAll, GenericWrite, WriteOwner, WriteDacl, Owns
+    The GPLink edge direction: GPO -> OU (FROM GPO TO the linked container)
+
+    Full GPO abuse path query:
+    MATCH p=(n)-[:GenericAll|GenericWrite|WriteOwner|WriteDacl|Owns]->(g:GPO)-[:GPLink]->
+            (ou:OU)-[:Contains*1..]->(target)
+    WHERE g.domain = 'DOMAIN.LOCAL'
+    RETURN n.name, g.name AS gpo, collect(DISTINCT target.name) AS affected_targets
+    LIMIT 100
+
     AD Relationship Types
     ---------------------
     - MemberOf: Group membership
@@ -783,21 +1099,27 @@ def cypher_reference() -> str:
     - WriteOwner / WriteDacl: ACL modification
     - ForceChangePassword: Password reset
     - AddMember: Add to group
-    - DCSync: GetChanges + GetChangesAll (domain replication)
+    - AddSelf: Add self to group
+    - DCSync: Pre-computed DCSync right (targets Domain node)
+    - GetChanges / GetChangesAll: Raw replication privileges (both required for DCSync)
     - Owns: Object owner
     - AllExtendedRights: All extended permissions
     - CanRDP / CanPSRemote / ExecuteDCOM: Remote access methods
     - AllowedToDelegate: Kerberos constrained delegation
-    - AllowedToAct: Resource-based constrained delegation
-    - ReadLAPSPassword / ReadGMSAPassword: Credential access
+    - AllowedToAct: Resource-based constrained delegation (RBCD)
+    - ReadLAPSPassword / ReadGMSAPassword / SyncLAPSPassword: Credential access
+    - DumpSMSAPassword: Standalone MSA password dump
     - SQLAdmin: SQL Server admin
     - HasSIDHistory: SID History abuse
-    - AddKeyCredentialLink: Shadow Credentials
+    - AddKeyCredentialLink: Shadow Credentials attack
     - WriteSPN: SPN manipulation (targeted Kerberoasting)
-    - GPLink: GPO linked to container
+    - WriteAccountRestrictions: Write userAccountControl / msDS-AllowedToActOnBehalfOfOtherIdentity
+    - GPLink: GPO linked to OU/Container (direction: GPO -> container)
     - Contains: OU/container membership
     - TrustedBy: Domain trust
-    - CoerceToTGT: Kerberos coercion
+    - CoerceToTGT: Kerberos coercion to TGT
+    - AddAllowedToAct: Write RBCD
+    - WriteGPLink: Write GPLink attribute
     - ADCSESC1/ESC3/ESC4/ESC6a/ESC6b/ESC9a/ESC9b/ESC10a/ESC10b/ESC13: ADCS abuse edges
     - GoldenCert: Golden certificate attack
     - CoerceAndRelayNTLMToSMB/ADCS/LDAP/LDAPS: NTLM relay paths
@@ -834,6 +1156,14 @@ def cypher_reference() -> str:
     RETURN obj.name, perm_count
     ORDER BY perm_count DESC
 
+    Cross-reference user privilege before labeling:
+    MATCH (u:User {objectid: $user_id})
+    OPTIONAL MATCH (u)-[:MemberOf*1..]->(g:Group)
+    OPTIONAL MATCH (u)-[:AdminTo]->(c:Computer)
+    RETURN u.name, u.enabled, u.admincount,
+           collect(DISTINCT g.name) AS groups,
+           collect(DISTINCT c.name) AS admin_on
+
     Example Queries
     ---------------
     Find all Domain Admins:
@@ -868,6 +1198,8 @@ def cypher_reference() -> str:
     RETURN u.displayname, num_permissions
     ORDER BY num_permissions DESC LIMIT 10
     """
+
+
 # Active Directory Resource
 @mcp.resource("bloodhound://guides/ad")
 def ad_guide() -> str:
@@ -912,7 +1244,9 @@ def ad_guide() -> str:
     - Kerberoastable: cypher_query with hasspn=true
     - Delegation abuse: user_info/computer_info with info_type="constrained_delegation"
     """
-#Azure Resource
+
+
+# Azure Resource
 @mcp.resource("bloodhound://guides/azure")
 def azure_guide() -> str:
     """Azure / Entra ID analysis quick reference for BloodHound."""
@@ -968,7 +1302,9 @@ def azure_guide() -> str:
     RETURN u.displayname, count(target) as can_reset_count
     ORDER BY can_reset_count DESC
     """
-#Adcs Resource
+
+
+# Adcs Resource
 @mcp.resource("bloodhound://guides/adcs")
 def adcs_guide() -> str:
     """ADCS attack vector quick reference for BloodHound."""
@@ -1009,6 +1345,8 @@ def adcs_guide() -> str:
     MATCH p=()-[:ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|GoldenCert]->(n)
     RETURN p
     """
+
+
 # Ad methodology resource
 @mcp.resource("bloodhound://guides/ad-methodology")
 def ad_methodology() -> str:
@@ -1102,7 +1440,9 @@ def ad_methodology() -> str:
     MATCH p=(n)-[:GenericAll|GenericWrite|WriteOwner|WriteDacl]->(g:GPO)-[:GPLink]->(ou:OU)-[:Contains*1..]->(target)
     RETURN p
     """
-#Azure Methodology resource
+
+
+# Azure Methodology resource
 @mcp.resource("bloodhound://guides/azure-methodology")
 def azure_methodology() -> str:
     """Full Azure / Entra ID attack methodology and analysis workflow."""
@@ -1178,7 +1518,9 @@ def azure_methodology() -> str:
     MATCH p=(mg:AZManagementGroup)-[:AZContains*1..]->(s:AZSubscription)
     RETURN p
     """
-#ADCS Attack Methodology resource
+
+
+# ADCS Attack Methodology resource
 @mcp.resource("bloodhound://guides/adcs-methodology")
 def adcs_methodology() -> str:
     """Full ADCS attack methodology with detailed ESC analysis."""
@@ -1279,6 +1621,8 @@ def adcs_methodology() -> str:
     5. Is manager approval required? (issuance requirements)
     6. Are there enrollment agents? (authorized signatures)
     """
+
+
 # OpenGraph Guide Resource
 @mcp.resource("bloodhound://opengraph/guide")
 def opengraph_guide() -> str:
@@ -1357,7 +1701,9 @@ def opengraph_guide() -> str:
     - custom_nodes(info_type="update", kind_name="...", config_json="...") — update
     - custom_nodes(info_type="delete", kind_name="...") — delete type config
     """
-#OpenGraph Examples Resource
+
+
+# OpenGraph Examples Resource
 @mcp.resource("bloodhound://opengraph/examples")
 def opengraph_examples() -> str:
     """Practical examples of custom node implementations for OpenGraph."""
@@ -1454,7 +1800,363 @@ def opengraph_examples() -> str:
     """
 
 
+@mcp.resource("bloodhound://cypher/offensive-queries")
+def offensive_query_library() -> str:
+    """Battle-tested Cypher query templates for common offensive scenarios. Load this before writing custom Cypher for attack path analysis."""
+    return """BloodHound Offensive Query Library
+    ====================================
+    Use these templates as starting points. Replace placeholders (DOMAIN.LOCAL, $domain_id, etc.)
+    with actual values. Always verify results by cross-referencing group memberships and privilege context.
+
+    == DCSync ==
+
+    Standard DCSync — pre-computed edge (most reliable):
+    MATCH (n)-[:DCSync]->(d:Domain)
+    WHERE d.name = 'DOMAIN.LOCAL'
+    RETURN n.name, labels(n) AS node_type, n.objectid
+    LIMIT 100
+
+    Non-standard DCSync — raw GetChanges + GetChangesAll (catches misconfigurations):
+    MATCH (n)-[:GetChanges]->(d:Domain {name: 'DOMAIN.LOCAL'})
+    MATCH (n)-[:GetChangesAll]->(d)
+    RETURN n.name, labels(n) AS node_type, n.objectid
+    LIMIT 100
+
+    All DCSync principals combined (standard + non-standard):
+    MATCH (n)-[:DCSync|GetChanges|GetChangesAll]->(d:Domain {name: 'DOMAIN.LOCAL'})
+    WITH n, d, collect(DISTINCT type(r)) AS edges
+    MATCH (n)-[r2:DCSync|GetChanges|GetChangesAll]->(d)
+    RETURN DISTINCT n.name, labels(n) AS node_type, n.admincount,
+           COALESCE(n.system_tags, '') AS tags
+    LIMIT 100
+
+    DCSync principals with group context (verify privilege level):
+    MATCH (n)-[:DCSync]->(d:Domain {name: 'DOMAIN.LOCAL'})
+    OPTIONAL MATCH (n)-[:MemberOf*1..]->(g:Group)
+    RETURN n.name, n.admincount, n.enabled,
+           collect(DISTINCT g.name) AS group_memberships
+    LIMIT 100
+
+    == GPO Abuse ==
+
+    Principals with write access to GPOs (GenericAll/GenericWrite/WriteOwner/WriteDacl/Owns):
+    MATCH (n)-[:GenericAll|GenericWrite|WriteOwner|WriteDacl|Owns]->(g:GPO)
+    WHERE g.domain = 'DOMAIN.LOCAL'
+    OPTIONAL MATCH (g)-[:GPLink]->(ou:OU)-[:Contains*1..]->(target)
+    RETURN n.name, labels(n) AS attacker_type, g.name AS gpo_name,
+           collect(DISTINCT target.name) AS affected_targets
+    LIMIT 100
+
+    Full GPO abuse path (attacker -> GPO -> OU -> targets):
+    MATCH p=(n)-[:GenericAll|GenericWrite|WriteOwner|WriteDacl|Owns]->(g:GPO)
+            -[:GPLink]->(ou:OU)-[:Contains*1..]->(target)
+    WHERE g.domain = 'DOMAIN.LOCAL'
+    RETURN n.name, g.name AS gpo_name, ou.name AS linked_ou,
+           labels(target) AS target_type, target.name AS target
+    LIMIT 100
+
+    Principals with WriteGPLink (can link GPOs to OUs):
+    MATCH (n)-[:WriteGPLink]->(ou:OU)
+    WHERE ou.domain = 'DOMAIN.LOCAL'
+    RETURN n.name, labels(n) AS attacker_type, ou.name AS target_ou
+    LIMIT 100
+
+    == Kerberoasting ==
+
+    Kerberoastable users (enabled, has SPN, not krbtgt or MSA/gMSA):
+    MATCH (u:User)
+    WHERE u.hasspn = true AND u.enabled = true
+    AND NOT u.objectid ENDS WITH '-502'
+    AND NOT COALESCE(u.gmsa, false) = true
+    AND NOT COALESCE(u.msa, false) = true
+    AND u.domain = 'DOMAIN.LOCAL'
+    RETURN u.name, u.objectid, u.admincount, u.serviceprincipalnames
+    LIMIT 100
+
+    Kerberoastable users with privilege context (group memberships + admin rights):
+    MATCH (u:User)
+    WHERE u.hasspn = true AND u.enabled = true
+    AND NOT u.objectid ENDS WITH '-502'
+    AND NOT COALESCE(u.gmsa, false) = true
+    AND NOT COALESCE(u.msa, false) = true
+    AND u.domain = 'DOMAIN.LOCAL'
+    OPTIONAL MATCH (u)-[:MemberOf*1..]->(g:Group)
+    OPTIONAL MATCH (u)-[:AdminTo]->(c:Computer)
+    RETURN u.name, u.admincount, u.serviceprincipalnames,
+           collect(DISTINCT g.name) AS groups,
+           collect(DISTINCT c.name) AS admin_on
+    LIMIT 100
+
+    Targeted Kerberoasting — who can set SPNs on other users (WriteSPN):
+    MATCH (n)-[:WriteSPN]->(t:User)
+    WHERE t.domain = 'DOMAIN.LOCAL'
+    RETURN n.name, labels(n) AS attacker_type, t.name AS target,
+           t.hasspn AS already_has_spn, t.enabled, t.admincount
+    LIMIT 100
+
+    == AS-REP Roasting ==
+
+    Users with pre-auth disabled (AS-REP Roastable):
+    MATCH (u:User)
+    WHERE u.dontreqpreauth = true AND u.enabled = true
+    AND u.domain = 'DOMAIN.LOCAL'
+    RETURN u.name, u.objectid, u.admincount
+    LIMIT 100
+
+    == Delegation Abuse ==
+
+    Unconstrained delegation computers (excluding DCs — objectid ends with -516 or -521):
+    MATCH (c:Computer)
+    WHERE COALESCE(c.unconstraineddelegation, false) = true
+    AND c.domain = 'DOMAIN.LOCAL'
+    AND NOT c.objectid ENDS WITH '-516'
+    AND NOT c.objectid ENDS WITH '-521'
+    RETURN c.name, c.objectid, c.operatingsystem
+    LIMIT 100
+
+    Constrained delegation — who can delegate to what services:
+    MATCH (n)-[:AllowedToDelegate]->(c:Computer)
+    WHERE c.domain = 'DOMAIN.LOCAL'
+    RETURN n.name, labels(n) AS principal_type, c.name AS delegate_to,
+           n.allowedtodelegate AS allowed_spns
+    LIMIT 100
+
+    RBCD — who can act on behalf of whom (AllowedToAct):
+    MATCH (s)-[:AllowedToAct]->(t:Computer)
+    WHERE t.domain = 'DOMAIN.LOCAL'
+    RETURN s.name AS delegator, labels(s) AS delegator_type,
+           t.name AS target_computer
+    LIMIT 100
+
+    AddAllowedToAct — who can write RBCD on computers:
+    MATCH (n)-[:AddAllowedToAct]->(c:Computer)
+    WHERE c.domain = 'DOMAIN.LOCAL'
+    RETURN n.name, labels(n) AS attacker_type, c.name AS target_computer
+    LIMIT 100
+
+    == Shadow Credentials ==
+
+    AddKeyCredentialLink — who can add shadow credentials to what targets:
+    MATCH (n)-[:AddKeyCredentialLink]->(t)
+    WHERE t.domain = 'DOMAIN.LOCAL'
+    RETURN n.name AS attacker, labels(n) AS attacker_type,
+           t.name AS target, labels(t) AS target_type
+    LIMIT 100
+
+    == Privileged Group Membership (Cross-Reference Before Labeling) ==
+
+    Check if a specific user is a member of any privileged groups:
+    MATCH (u:User {objectid: $user_objectid})-[:MemberOf*1..]->(g:Group)
+    RETURN g.name AS group, g.admincount AS group_is_privileged
+    ORDER BY g.admincount DESC
+
+    Find users who can add members to privileged groups WITH group membership context:
+    MATCH (n)-[:AddMember|AddSelf]->(g:Group)
+    WHERE g.domain = 'DOMAIN.LOCAL' AND g.admincount = true
+    OPTIONAL MATCH (n)-[:MemberOf*1..]->(mg:Group)
+    RETURN n.name, labels(n) AS principal_type, n.admincount AS already_privileged,
+           g.name AS target_group,
+           collect(DISTINCT mg.name) AS principal_groups
+    LIMIT 100
+
+    == LAPS and gMSA ==
+
+    ReadLAPSPassword — who can read LAPS passwords:
+    MATCH (n)-[:ReadLAPSPassword]->(c:Computer)
+    WHERE c.domain = 'DOMAIN.LOCAL'
+    RETURN n.name, labels(n) AS principal_type, c.name AS computer
+    LIMIT 100
+
+    ReadGMSAPassword — who can read gMSA passwords:
+    MATCH (n)-[:ReadGMSAPassword]->(u:User)
+    WHERE u.domain = 'DOMAIN.LOCAL'
+    RETURN n.name, labels(n) AS principal_type, u.name AS gmsa_account
+    LIMIT 100
+
+    Computers with LAPS configured:
+    MATCH (c:Computer)
+    WHERE COALESCE(c.haslaps, false) = true AND c.domain = 'DOMAIN.LOCAL'
+    RETURN c.name, c.operatingsystem
+    LIMIT 100
+
+    == Infrastructure Enumeration ==
+
+    File servers — computers with CIFS or NFS SPNs:
+    MATCH (c:Computer)
+    WHERE ANY(spn IN COALESCE(c.serviceprincipalnames, [])
+              WHERE spn STARTS WITH 'CIFS/' OR spn STARTS WITH 'nfs/')
+    AND c.domain = 'DOMAIN.LOCAL'
+    RETURN c.name, c.operatingsystem,
+           [spn IN c.serviceprincipalnames WHERE spn STARTS WITH 'CIFS/' OR spn STARTS WITH 'nfs/'] AS file_spns
+    LIMIT 100
+
+    SQL servers — computers with MSSQLSvc SPNs or SQLAdmin relationships:
+    MATCH (c:Computer)
+    WHERE ANY(spn IN COALESCE(c.serviceprincipalnames, []) WHERE spn STARTS WITH 'MSSQLSvc/')
+    AND c.domain = 'DOMAIN.LOCAL'
+    RETURN c.name, c.operatingsystem,
+           [spn IN c.serviceprincipalnames WHERE spn STARTS WITH 'MSSQLSvc/'] AS sql_spns
+    LIMIT 100
+
+    SQL admins (via SQLAdmin edge):
+    MATCH (n)-[:SQLAdmin]->(c:Computer)
+    WHERE c.domain = 'DOMAIN.LOCAL'
+    RETURN c.name AS sql_server, c.operatingsystem,
+           collect(DISTINCT n.name) AS sql_admins
+    LIMIT 100
+
+    Web/IIS servers — computers with HTTP/HTTPS SPNs:
+    MATCH (c:Computer)
+    WHERE ANY(spn IN COALESCE(c.serviceprincipalnames, [])
+              WHERE spn STARTS WITH 'HTTP/' OR spn STARTS WITH 'HTTPS/')
+    AND c.domain = 'DOMAIN.LOCAL'
+    RETURN c.name, c.operatingsystem,
+           [spn IN c.serviceprincipalnames WHERE spn STARTS WITH 'HTTP/' OR spn STARTS WITH 'HTTPS/'] AS web_spns
+    LIMIT 100
+
+    Computers with passwords in description:
+    MATCH (c:Computer)
+    WHERE c.domain = 'DOMAIN.LOCAL'
+    AND c.description IS NOT NULL
+    AND (toLower(c.description) CONTAINS 'password' OR toLower(c.description) CONTAINS 'pass' OR toLower(c.description) CONTAINS 'pwd')
+    RETURN c.name, c.description, c.operatingsystem
+    LIMIT 100
+
+    Users with passwords in description:
+    MATCH (u:User)
+    WHERE u.domain = 'DOMAIN.LOCAL'
+    AND u.description IS NOT NULL
+    AND (toLower(u.description) CONTAINS 'password' OR toLower(u.description) CONTAINS 'pass' OR toLower(u.description) CONTAINS 'pwd')
+    RETURN u.name, u.description, u.enabled, u.admincount
+    LIMIT 100
+
+    Domain controllers — computers with DC SIDs:
+    MATCH (c:Computer)-[:MemberOf*1..]->(g:Group)
+    WHERE g.objectid ENDS WITH '-516' OR g.objectid ENDS WITH '-521'
+    AND c.domain = 'DOMAIN.LOCAL'
+    RETURN c.name, c.objectid, c.operatingsystem
+    LIMIT 100
+
+    == High-Value Session Harvesting ==
+
+    Admin user sessions on non-DC computers (lateral movement targets):
+    MATCH (u:User)-[:HasSession]->(c:Computer)
+    WHERE u.admincount = true AND u.enabled = true
+    AND u.domain = 'DOMAIN.LOCAL'
+    AND NOT c.objectid ENDS WITH '-516'
+    AND NOT c.objectid ENDS WITH '-521'
+    RETURN u.name, c.name AS computer, c.operatingsystem
+    LIMIT 100
+
+    Tier-zero sessions (owned tag or system_tags):
+    MATCH (u:User)-[:HasSession]->(c:Computer)
+    WHERE COALESCE(u.system_tags, '') CONTAINS 'tier zero'
+    AND c.domain = 'DOMAIN.LOCAL'
+    RETURN u.name, c.name AS computer
+    LIMIT 100
+
+    == NTLM Relay Paths ==
+
+    Computers that can be coerced and relayed to SMB:
+    MATCH p=(src:Computer)-[:CoerceAndRelayNTLMToSMB]->(dst:Computer)
+    WHERE src.domain = 'DOMAIN.LOCAL'
+    RETURN src.name AS coerce_target, dst.name AS relay_to
+    LIMIT 100
+
+    Computers that can be coerced and relayed to ADCS:
+    MATCH p=(src:Computer)-[:CoerceAndRelayNTLMToADCS]->(ca:EnterpriseCA)
+    WHERE src.domain = 'DOMAIN.LOCAL'
+    RETURN src.name AS coerce_target, ca.name AS enterprise_ca
+    LIMIT 100
+
+    Full NTLM relay paths:
+    MATCH (src)-[r:CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS]->(dst)
+    WHERE src.domain = 'DOMAIN.LOCAL'
+    RETURN src.name, type(r) AS relay_type, dst.name AS relay_target,
+           labels(dst) AS target_type
+    LIMIT 100
+
+    == Domain Trusts ==
+
+    All outbound trusts (this domain trusts these):
+    MATCH (d:Domain)-[:TrustedBy]->(t:Domain)
+    WHERE d.name = 'DOMAIN.LOCAL'
+    RETURN d.name AS source_domain, t.name AS trusted_domain
+
+    Cross-domain attack paths via trusts:
+    MATCH p=(n)-[*1..5]->(t:Group)
+    WHERE t.name STARTS WITH 'DOMAIN ADMINS@'
+    AND n.domain <> t.domain
+    RETURN p LIMIT 50
+
+    Foreign admins (users from other domains with local admin rights):
+    MATCH (u:User)-[:AdminTo]->(c:Computer)
+    WHERE u.domain <> c.domain
+    RETURN u.name, u.domain AS user_domain, c.name AS computer, c.domain AS computer_domain
+    LIMIT 100
+
+    SID History abuse:
+    MATCH (n)-[:HasSIDHistory]->(t)
+    WHERE n.domain = 'DOMAIN.LOCAL'
+    RETURN n.name, labels(n) AS attacker_type, t.name AS sid_history_target,
+           labels(t) AS target_type
+    LIMIT 100
+
+    == ADCS Attack Paths ==
+
+    All ADCS ESC paths in the domain:
+    MATCH p=(n)-[:ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13]->(t)
+    WHERE n.domain = 'DOMAIN.LOCAL'
+    RETURN n.name, labels(n) AS attacker_type,
+           type(relationships(p)[0]) AS esc_type, t.name AS target
+    LIMIT 100
+
+    Certificate templates with dangerous configurations (enrollee supplies subject):
+    MATCH (t:CertTemplate)
+    WHERE t.domain = 'DOMAIN.LOCAL'
+    AND COALESCE(t.enrolleesuppliessubject, false) = true
+    RETURN t.name, t.displayname, t.ekus, t.requiresmanagerapproval
+    LIMIT 100
+
+    Enterprise CAs — overview:
+    MATCH (ca:EnterpriseCA)
+    WHERE ca.domain = 'DOMAIN.LOCAL'
+    RETURN ca.name, ca.objectid, ca.caname
+    LIMIT 100
+
+    ESC paths from owned principals:
+    MATCH p=(s:Base)-[:ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13]->(t)
+    WHERE COALESCE(s.system_tags, '') CONTAINS 'owned'
+    RETURN s.name AS owned_principal, type(relationships(p)[0]) AS esc_type,
+           t.name AS target
+    LIMIT 100
+
+    == Attack Paths from Owned Nodes ==
+
+    Shortest paths from all owned principals to any tier-zero/high-value targets:
+    MATCH p=shortestPath((s:Base)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|Contains|DCFor|TrustedBy*1..]->(t:Base))
+    WHERE COALESCE(s.system_tags, '') CONTAINS 'owned'
+    AND COALESCE(t.system_tags, '') CONTAINS 'tier zero'
+    AND s <> t
+    RETURN p LIMIT 25
+
+    Paths from a specific owned user to Domain Admins:
+    MATCH p=shortestPath((s:User)-[*1..]->(g:Group))
+    WHERE s.objectid = $user_objectid
+    AND g.name STARTS WITH 'DOMAIN ADMINS@'
+    RETURN p LIMIT 10
+
+    All outbound edges from a specific user (effective permissions):
+    MATCH (u:User {objectid: $user_objectid})-[r]->(t)
+    WHERE type(r) IN ['GenericAll','GenericWrite','WriteOwner','WriteDacl',
+                      'ForceChangePassword','AddMember','Owns','AllExtendedRights',
+                      'AddKeyCredentialLink','WriteSPN','AddSelf','AdminTo',
+                      'ReadLAPSPassword','ReadGMSAPassword','DCSync','AllowedToAct',
+                      'AllowedToDelegate','AddAllowedToAct','WriteAccountRestrictions']
+    RETURN t.name AS target, labels(t) AS target_type, type(r) AS permission
+    LIMIT 100
+    """
+
+
 if __name__ == "__main__":
     mcp.run()
-
-
