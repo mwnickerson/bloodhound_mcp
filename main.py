@@ -44,7 +44,7 @@ def _handle_tool_call(info_type: str, handlers: dict, **context):
             "error": f"Unknown info_type '{info_type}'. Valid options: {valid}"
         })
     try:
-        result = handler()
+        result = handlers()
         return json.dumps({
             "info_type": info_type,
             "data": result,
@@ -96,7 +96,7 @@ def bloodhound_assistant() -> str:
     OpenGraph (load when working with custom nodes):
     - bloodhound://opengraph/guide — Custom node schema design and best practices
     - bloodhound://opengraph/examples — SQL Server and Web App implementation examples
-    
+
     Each tool's info_type parameter controls what data is retrieved.
 """
 
