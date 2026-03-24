@@ -1,1117 +1,1240 @@
+"""
+Tests for bloodhound_mcp composite tools in main.py.
+
+Architecture: main.py exposes 11 composite MCP tools. Each tool accepts an
+info_type parameter that dispatches to the appropriate BloodHound API method
+via _handle_tool_call(). Tests mock bloodhound_api at the module level so no
+live BH CE instance is needed.
+
+Tools covered:
+    domain_info, user_info, group_info, computer_info, ou_info, gpo_info,
+    graph_analysis, adcs_info, cypher_query, data_quality, custom_nodes,
+    asset_groups
+
+Helper covered:
+    _handle_tool_call (dispatch, unknown info_type, error propagation)
+"""
+
 import json
-import os
 import sys
-from unittest.mock import MagicMock, Mock, patch
+import os
+from unittest.mock import patch, MagicMock
 
 import pytest
 
-# Add the project root to Python path so we can import main.py
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-# Import strategy: Import main normally, but we'll mock the bloodhound_api instance
-try:
-    import main
-    MAIN_IMPORTED = True
-    print("✅ Successfully imported main.py")
-except Exception as e:
-    MAIN_IMPORTED = False
-    print(f"❌ Failed to import main.py: {e}")
-    main = Mock()
-
-
-class TestDomainMCPToolsComplete:
-    """Comprehensive tests for all domain-related MCP tools"""
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_groups(self, mock_api):
-        """Test get_groups MCP tool"""
-        fake_groups = {"data": [{"objectid": "group1", "name": "Domain Admins"}], "count": 1}
-        mock_api.domains.get_groups.return_value = fake_groups
-        
-        result_json = main.get_groups("domain_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.domains.get_groups.assert_called_once_with("domain_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "groups" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_computers(self, mock_api):
-        """Test get_computers MCP tool"""
-        fake_computers = {"data": [{"objectid": "comp1", "name": "DC01"}], "count": 1}
-        mock_api.domains.get_computers.return_value = fake_computers
-        
-        result_json = main.get_computers("domain_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.domains.get_computers.assert_called_once_with("domain_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "computers" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_security_controllers(self, mock_api):
-        """Test get_security_controllers MCP tool"""
-        fake_controllers = {"data": [{"objectid": "ctrl1", "name": "Admin@domain.local"}], "count": 1}
-        mock_api.domains.get_controllers.return_value = fake_controllers
-        
-        result_json = main.get_security_controllers("domain_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.domains.get_controllers.assert_called_once_with("domain_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "controllers" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_gpos(self, mock_api):
-        """Test get_gpos MCP tool"""
-        fake_gpos = {"data": [{"objectid": "gpo1", "name": "Default Domain Policy"}], "count": 1}
-        mock_api.domains.get_gpos.return_value = fake_gpos
-        
-        result_json = main.get_gpos("domain_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.domains.get_gpos.assert_called_once_with("domain_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "gpos" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_ous(self, mock_api):
-        """Test get_ous MCP tool"""
-        fake_ous = {"data": [{"objectid": "ou1", "name": "Domain Controllers"}], "count": 1}
-        mock_api.domains.get_ous.return_value = fake_ous
-        
-        result_json = main.get_ous("domain_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.domains.get_ous.assert_called_once_with("domain_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "ous" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_dc_syncers(self, mock_api):
-        """Test get_dc_syncers MCP tool"""
-        fake_syncers = {"data": [{"objectid": "sync1", "name": "SYNC01$"}], "count": 1}
-        mock_api.domains.get_dc_syncers.return_value = fake_syncers
-        
-        result_json = main.get_dc_syncers("domain_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.domains.get_dc_syncers.assert_called_once_with("domain_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "dc_syncers" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_foreign_admins(self, mock_api):
-        """Test get_foreign_admins MCP tool"""
-        fake_admins = {"data": [{"objectid": "admin1", "name": "FOREIGN\\Administrator"}], "count": 1}
-        mock_api.domains.get_foreign_admins.return_value = fake_admins
-        
-        result_json = main.get_foreign_admins("domain_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.domains.get_foreign_admins.assert_called_once_with("domain_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "foreign_admins" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_foreign_gpo_controllers(self, mock_api):
-        """Test get_foreign_gpo_controllers MCP tool"""
-        fake_controllers = {"data": [{"objectid": "ctrl1", "name": "FOREIGN\\GPOAdmin"}], "count": 1}
-        mock_api.domains.get_foreign_gpo_controllers.return_value = fake_controllers
-        
-        result_json = main.get_foreign_gpo_controllers("domain_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.domains.get_foreign_gpo_controllers.assert_called_once_with("domain_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "foreign_gpo_controllers" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_foreign_groups(self, mock_api):
-        """Test get_foreign_groups MCP tool"""
-        fake_groups = {"data": [{"objectid": "grp1", "name": "FOREIGN\\CrossDomainGroup"}], "count": 1}
-        mock_api.domains.get_foreign_groups.return_value = fake_groups
-        
-        result_json = main.get_foreign_groups("domain_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.domains.get_foreign_groups.assert_called_once_with("domain_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "foreign_groups" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_foreign_users(self, mock_api):
-        """Test get_foreign_users MCP tool"""
-        fake_users = {"data": [{"objectid": "user1", "name": "FOREIGN\\CrossUser"}], "count": 1}
-        mock_api.domains.get_foreign_users.return_value = fake_users
-        
-        result_json = main.get_foreign_users("domain_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.domains.get_foreign_users.assert_called_once_with("domain_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "foreign_users" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_inbound_trusts(self, mock_api):
-        """Test get_inbound_trusts MCP tool"""
-        fake_trusts = {"data": [{"objectid": "trust1", "name": "TRUSTED.DOMAIN"}], "count": 1}
-        mock_api.domains.get_inbound_trusts.return_value = fake_trusts
-        
-        result_json = main.get_inbound_trusts("domain_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.domains.get_inbound_trusts.assert_called_once_with("domain_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "inbound_trusts" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_outbound_trusts(self, mock_api):
-        """Test get_outbound_trusts MCP tool"""
-        fake_trusts = {"data": [{"objectid": "trust1", "name": "OUTBOUND.DOMAIN"}], "count": 1}
-        mock_api.domains.get_outbound_trusts.return_value = fake_trusts
-        
-        result_json = main.get_outbound_trusts("domain_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.domains.get_outbound_trusts.assert_called_once_with("domain_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "outbound_trusts" in result
-
-
-class TestUserMCPTools:
-    """Test all user-related MCP tools"""
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_user_info(self, mock_api):
-        """Test get_user_info MCP tool"""
-        fake_user = {"data": {"objectid": "user1", "name": "john.doe@domain.local"}}
-        mock_api.users.get_info.return_value = fake_user
-        
-        result_json = main.get_user_info("user_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.users.get_info.assert_called_once_with("user_id_123")
-        assert "user_info" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_user_admin_rights(self, mock_api):
-        """Test get_user_admin_rights MCP tool"""
-        fake_rights = {"data": [{"objectid": "comp1", "name": "SERVER01"}], "count": 1}
-        mock_api.users.get_admin_rights.return_value = fake_rights
-        
-        result_json = main.get_user_admin_rights("user_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.users.get_admin_rights.assert_called_once_with("user_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "user_admin_rights" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_user_constrained_delegation_rights(self, mock_api):
-        """Test get_user_constrained_delegation_rights MCP tool"""
-        fake_rights = {"data": [{"objectid": "svc1", "name": "SERVICE01"}], "count": 1}
-        mock_api.users.get_constrained_delegation_rights.return_value = fake_rights
-        
-        result_json = main.get_user_constrained_delegation_rights("user_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.users.get_constrained_delegation_rights.assert_called_once_with("user_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "user_constrained_delegation_rights" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_user_controllables(self, mock_api):
-        """Test get_user_controllables MCP tool"""
-        fake_controllables = {"data": [{"objectid": "obj1", "name": "CONTROLLED_OBJECT"}], "count": 1}
-        mock_api.users.get_controllables.return_value = fake_controllables
-        
-        result_json = main.get_user_controllables("user_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.users.get_controllables.assert_called_once_with("user_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "user_controlables" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_user_controllers(self, mock_api):
-        """Test get_user_controllers MCP tool"""
-        fake_controllers = {"data": [{"objectid": "ctrl1", "name": "DOMAIN_ADMIN"}], "count": 1}
-        mock_api.users.get_controllers.return_value = fake_controllers
-        
-        result_json = main.get_user_controllers("user_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.users.get_controllers.assert_called_once_with("user_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "user_controllers" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_user_dcom_rights(self, mock_api):
-        """Test get_user_dcom_rights MCP tool"""
-        fake_rights = {"data": [{"objectid": "comp1", "name": "TARGET_COMP"}], "count": 1}
-        mock_api.users.get_dcom_rights.return_value = fake_rights
-        
-        result_json = main.get_user_dcom_rights("user_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.users.get_dcom_rights.assert_called_once_with("user_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "user_dcom_rights" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_user_memberships(self, mock_api):
-        """Test get_user_memberships MCP tool"""
-        fake_memberships = {"data": [{"objectid": "grp1", "name": "IT_ADMINS"}], "count": 1}
-        mock_api.users.get_memberships.return_value = fake_memberships
-        
-        result_json = main.get_user_memberships("user_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.users.get_memberships.assert_called_once_with("user_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "user_memberships" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_user_ps_remote_rights(self, mock_api):
-        """Test get_user_ps_remote_rights MCP tool"""
-        fake_rights = {"data": [{"objectid": "comp1", "name": "PS_TARGET"}], "count": 1}
-        mock_api.users.get_ps_remote_rights.return_value = fake_rights
-        
-        result_json = main.get_user_ps_remote_rights("user_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.users.get_ps_remote_rights.assert_called_once_with("user_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "user_ps_remote_rights" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_user_rdp_rights(self, mock_api):
-        """Test get_user_rdp_rights MCP tool"""
-        fake_rights = {"data": [{"objectid": "comp1", "name": "RDP_TARGET"}], "count": 1}
-        mock_api.users.get_rdp_rights.return_value = fake_rights
-        
-        result_json = main.get_user_rdp_rights("user_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.users.get_rdp_rights.assert_called_once_with("user_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "user_rdp_rights" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_user_sessions(self, mock_api):
-        """Test get_user_sessions MCP tool"""
-        fake_sessions = {"data": [{"objectid": "comp1", "name": "SESSION_HOST"}], "count": 1}
-        mock_api.users.get_sessions.return_value = fake_sessions
-        
-        result_json = main.get_user_sessions("user_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.users.get_sessions.assert_called_once_with("user_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "user_sessions" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_user_sql_admin_rights(self, mock_api):
-        """Test get_user_sql_admin_rights MCP tool"""
-        fake_rights = {"data": [{"objectid": "sql1", "name": "SQL_SERVER"}], "count": 1}
-        mock_api.users.get_sql_admin_rights.return_value = fake_rights
-        
-        result_json = main.get_user_sql_admin_rights("user_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.users.get_sql_admin_rights.assert_called_once_with("user_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "user_sql_admin_rights" in result
-
-
-class TestGroupMCPTools:
-    """Test all group-related MCP tools"""
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_group_info(self, mock_api):
-        """Test get_group_info MCP tool"""
-        fake_group = {"data": {"objectid": "grp1", "name": "Domain Admins@domain.local"}}
-        mock_api.groups.get_info.return_value = fake_group
-        
-        result_json = main.get_group_info("group_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.groups.get_info.assert_called_once_with("group_id_123")
-        assert "group_info" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_group_admin_rights(self, mock_api):
-        """Test get_group_admin_rights MCP tool"""
-        fake_rights = {"data": [{"objectid": "comp1", "name": "SERVER01"}], "count": 1}
-        mock_api.groups.get_admin_rights.return_value = fake_rights
-        
-        result_json = main.get_group_admin_rights("group_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.groups.get_admin_rights.assert_called_once_with("group_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "group_admin_rights" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_group_controllables(self, mock_api):
-        """Test get_group_controllables MCP tool"""
-        fake_controllables = {"data": [{"objectid": "obj1", "name": "CONTROLLED_OBJECT"}], "count": 1}
-        mock_api.groups.get_controllables.return_value = fake_controllables
-        
-        result_json = main.get_group_controllables("group_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.groups.get_controllables.assert_called_once_with("group_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "group_controlables" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_group_controllers(self, mock_api):
-        """Test get_group_controllers MCP tool"""
-        fake_controllers = {"data": [{"objectid": "ctrl1", "name": "CONTROLLER"}], "count": 1}
-        mock_api.groups.get_controllers.return_value = fake_controllers
-        
-        result_json = main.get_group_controllers("group_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.groups.get_controllers.assert_called_once_with("group_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "group_controllers" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_group_dcom_rights(self, mock_api):
-        """Test get_group_dcom_rights MCP tool"""
-        fake_rights = {"data": [{"objectid": "comp1", "name": "DCOM_TARGET"}], "count": 1}
-        mock_api.groups.get_dcom_rights.return_value = fake_rights
-        
-        result_json = main.get_group_dcom_rights("group_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.groups.get_dcom_rights.assert_called_once_with("group_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "group_dcom_rights" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_group_members(self, mock_api):
-        """Test get_group_members MCP tool"""
-        fake_members = {"data": [{"objectid": "user1", "name": "member1@domain.local"}], "count": 1}
-        mock_api.groups.get_members.return_value = fake_members
-        
-        result_json = main.get_group_members("group_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.groups.get_members.assert_called_once_with("group_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "group_members" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_group_memberships(self, mock_api):
-        """Test get_group_memberships MCP tool"""
-        fake_memberships = {"data": [{"objectid": "grp1", "name": "PARENT_GROUP"}], "count": 1}
-        mock_api.groups.get_memberships.return_value = fake_memberships
-        
-        result_json = main.get_group_memberships("group_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.groups.get_memberships.assert_called_once_with("group_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "group_memberships" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_group_ps_remote_rights(self, mock_api):
-        """Test get_group_ps_remote_rights MCP tool"""
-        fake_rights = {"data": [{"objectid": "comp1", "name": "PS_TARGET"}], "count": 1}
-        mock_api.groups.get_ps_remote_rights.return_value = fake_rights
-        
-        result_json = main.get_group_ps_remote_rights("group_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.groups.get_ps_remote_rights.assert_called_once_with("group_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "group_ps_remote_rights" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_group_rdp_rights(self, mock_api):
-        """Test get_group_rdp_rights MCP tool"""
-        fake_rights = {"data": [{"objectid": "comp1", "name": "RDP_TARGET"}], "count": 1}
-        mock_api.groups.get_rdp_rights.return_value = fake_rights
-        
-        result_json = main.get_group_rdp_rights("group_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.groups.get_rdp_rights.assert_called_once_with("group_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "group_rdp_rights" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_group_sessions(self, mock_api):
-        """Test get_group_sessions MCP tool"""
-        fake_sessions = {"data": [{"objectid": "comp1", "name": "SESSION_HOST"}], "count": 1}
-        mock_api.groups.get_sessions.return_value = fake_sessions
-        
-        result_json = main.get_group_sessions("group_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.groups.get_sessions.assert_called_once_with("group_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "group_sessions" in result
-
-
-class TestComputerMCPTools:
-    """Test all computer-related MCP tools"""
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_computer_info(self, mock_api):
-        """Test get_computer_info MCP tool"""
-        fake_computer = {"data": {"objectid": "comp1", "name": "SERVER01.domain.local"}}
-        mock_api.computers.get_info.return_value = fake_computer
-        
-        result_json = main.get_computer_info("computer_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.computers.get_info.assert_called_once_with("computer_id_123")
-        assert "computer_info" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_computer_admin_rights(self, mock_api):
-        """Test get_computer_admin_rights MCP tool"""
-        fake_rights = {"data": [{"objectid": "comp1", "name": "TARGET_COMP"}], "count": 1}
-        mock_api.computers.get_admin_rights.return_value = fake_rights
-        
-        result_json = main.get_computer_admin_rights("computer_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.computers.get_admin_rights.assert_called_once_with("computer_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "computer_admin_rights" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_computer_admin_users(self, mock_api):
-        """Test get_computer_admin_users MCP tool"""
-        fake_users = {"data": [{"objectid": "user1", "name": "admin@domain.local"}], "count": 1}
-        mock_api.computers.get_admin_users.return_value = fake_users
-        
-        result_json = main.get_computer_admin_users("computer_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.computers.get_admin_users.assert_called_once_with("computer_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "computer_admin_users" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_computer_constrained_delegation_rights(self, mock_api):
-        """Test get_computer_constrained_delegation_rights MCP tool"""
-        fake_rights = {"data": [{"objectid": "svc1", "name": "SERVICE01"}], "count": 1}
-        mock_api.computers.get_constrained_delegation_rights.return_value = fake_rights
-        
-        result_json = main.get_computer_constrained_delegation_rights("computer_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.computers.get_constrained_delegation_rights.assert_called_once_with("computer_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "computer_constrained_delegation_rights" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_computer_constrained_users(self, mock_api):
-        """Test get_computer_constrained_users MCP tool"""
-        fake_users = {"data": [{"objectid": "user1", "name": "delegated@domain.local"}], "count": 1}
-        mock_api.computers.get_constrained_users.return_value = fake_users
-        
-        result_json = main.get_computer_constrained_users("computer_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.computers.get_constrained_users.assert_called_once_with("computer_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "computer_constrained_users" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_computer_controllables(self, mock_api):
-        """Test get_computer_controllables MCP tool"""
-        fake_controllables = {"data": [{"objectid": "obj1", "name": "CONTROLLED"}], "count": 1}
-        mock_api.computers.get_controllables.return_value = fake_controllables
-        
-        result_json = main.get_computer_controllables("computer_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.computers.get_controllables.assert_called_once_with("computer_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "computer_controlables" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_computer_controllers(self, mock_api):
-        """Test get_computer_controllers MCP tool"""
-        fake_controllers = {"data": [{"objectid": "ctrl1", "name": "CONTROLLER"}], "count": 1}
-        mock_api.computers.get_controllers.return_value = fake_controllers
-        
-        result_json = main.get_computer_controllers("computer_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.computers.get_controllers.assert_called_once_with("computer_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "computer_controllers" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_computer_dcom_rights(self, mock_api):
-        """Test get_computer_dcom_rights MCP tool"""
-        fake_rights = {"data": [{"objectid": "comp1", "name": "DCOM_TARGET"}], "count": 1}
-        mock_api.computers.get_dcom_rights.return_value = fake_rights
-        
-        result_json = main.get_computer_dcom_rights("computer_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.computers.get_dcom_rights.assert_called_once_with("computer_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "computer_dcom_rights" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_computer_dcom_users(self, mock_api):
-        """Test get_computer_dcom_users MCP tool"""
-        fake_users = {"data": [{"objectid": "user1", "name": "dcom_user@domain.local"}], "count": 1}
-        mock_api.computers.get_dcom_users.return_value = fake_users
-        
-        result_json = main.get_computer_dcom_users("computer_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.computers.get_dcom_users.assert_called_once_with("computer_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "computer_dcom_users" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_computer_memberships(self, mock_api):
-        """Test get_computer_memberships MCP tool"""
-        fake_memberships = {"data": [{"objectid": "grp1", "name": "COMPUTER_GROUP"}], "count": 1}
-        mock_api.computers.get_memberships.return_value = fake_memberships
-        
-        result_json = main.get_computer_memberships("computer_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.computers.get_memberships.assert_called_once_with("computer_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "computer_memberships" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_computer_ps_remote_rights(self, mock_api):
-        """Test get_computer_ps_remote_rights MCP tool"""
-        fake_rights = {"data": [{"objectid": "comp1", "name": "PS_TARGET"}], "count": 1}
-        mock_api.computers.get_ps_remote_rights.return_value = fake_rights
-        
-        result_json = main.get_computer_ps_remote_rights("computer_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.computers.get_ps_remote_rights.assert_called_once_with("computer_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "computer_ps_remote_rights" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_computer_ps_remote_users(self, mock_api):
-        """Test get_computer_ps_remote_users MCP tool"""
-        fake_users = {"data": [{"objectid": "user1", "name": "ps_user@domain.local"}], "count": 1}
-        mock_api.computers.get_ps_remote_users.return_value = fake_users
-        
-        result_json = main.get_computer_ps_remote_users("computer_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.computers.get_ps_remote_users.assert_called_once_with("computer_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "computer_ps_remote_users" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_computer_rdp_rights(self, mock_api):
-        """Test get_computer_rdp_rights MCP tool"""
-        fake_rights = {"data": [{"objectid": "comp1", "name": "RDP_TARGET"}], "count": 1}
-        mock_api.computers.get_rdp_rights.return_value = fake_rights
-        
-        result_json = main.get_computer_rdp_rights("computer_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.computers.get_rdp_rights.assert_called_once_with("computer_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "computer_rdp_rights" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_computer_rdp_users(self, mock_api):
-        """Test get_computer_rdp_users MCP tool"""
-        fake_users = {"data": [{"objectid": "user1", "name": "rdp_user@domain.local"}], "count": 1}
-        mock_api.computers.get_rdp_users.return_value = fake_users
-        
-        result_json = main.get_computer_rdp_users("computer_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.computers.get_rdp_users.assert_called_once_with("computer_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "computer_rdp_users" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_computer_sessions(self, mock_api):
-        """Test get_computer_sessions MCP tool"""
-        fake_sessions = {"data": [{"objectid": "user1", "name": "session_user@domain.local"}], "count": 1}
-        mock_api.computers.get_sessions.return_value = fake_sessions
-        
-        result_json = main.get_computer_sessions("computer_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.computers.get_sessions.assert_called_once_with("computer_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "computer_sessions" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_computer_sql_admin_rights(self, mock_api):
-        """Test get_computer_sql_admin_rights MCP tool"""
-        fake_rights = {"data": [{"objectid": "sql1", "name": "SQL_SERVER"}], "count": 1}
-        mock_api.computers.get_sql_admin_rights.return_value = fake_rights
-        
-        result_json = main.get_computer_sql_admin_rights("computer_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.computers.get_sql_admin_rights.assert_called_once_with("computer_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "computer_sql_admin_rights" in result
-
-
-class TestOUMCPTools:
-    """Test all OU-related MCP tools"""
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_ou_info(self, mock_api):
-        """Test get_ou_info MCP tool"""
-        fake_ou = {"data": {"objectid": "ou1", "name": "Domain Controllers"}}
-        mock_api.ous.get_info.return_value = fake_ou
-        
-        result_json = main.get_ou_info("ou_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.ous.get_info.assert_called_once_with("ou_id_123")
-        assert "ou_info" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_ou_computers(self, mock_api):
-        """Test get_ou_computers MCP tool"""
-        fake_computers = {"data": [{"objectid": "comp1", "name": "DC01"}], "count": 1}
-        mock_api.ous.get_computers.return_value = fake_computers
-        
-        result_json = main.get_ou_computers("ou_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.ous.get_computers.assert_called_once_with("ou_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "ou_computers" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_ou_groups(self, mock_api):
-        """Test get_ou_groups MCP tool"""
-        fake_groups = {"data": [{"objectid": "grp1", "name": "OU_GROUP"}], "count": 1}
-        mock_api.ous.get_groups.return_value = fake_groups
-        
-        result_json = main.get_ou_groups("ou_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.ous.get_groups.assert_called_once_with("ou_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "ou_groups" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_ou_gpos(self, mock_api):
-        """Test get_ou_gpos MCP tool"""
-        fake_gpos = {"data": [{"objectid": "gpo1", "name": "OU_POLICY"}], "count": 1}
-        mock_api.ous.get_gpos.return_value = fake_gpos
-        
-        result_json = main.get_ou_gpos("ou_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.ous.get_gpos.assert_called_once_with("ou_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "ou_gpos" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_ou_users(self, mock_api):
-        """Test get_ou_users MCP tool"""
-        fake_users = {"data": [{"objectid": "user1", "name": "ou_user@domain.local"}], "count": 1}
-        mock_api.ous.get_users.return_value = fake_users
-        
-        result_json = main.get_ou_users("ou_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.ous.get_users.assert_called_once_with("ou_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "ou_users" in result
-
-
-class TestGPOMCPTools:
-    """Test all GPO-related MCP tools"""
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_gpo_info(self, mock_api):
-        """Test get_gpo_info MCP tool"""
-        fake_gpo = {"data": {"objectid": "gpo1", "name": "Default Domain Policy"}}
-        mock_api.gpos.get_info.return_value = fake_gpo
-        
-        result_json = main.get_gpo_info("gpo_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.gpos.get_info.assert_called_once_with("gpo_id_123")
-        assert "gpo_info" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_gpo_computers(self, mock_api):
-        """Test get_gpo_computers MCP tool"""
-        fake_computers = {"data": [{"objectid": "comp1", "name": "TARGET_COMP"}], "count": 1}
-        mock_api.gpos.get_computers.return_value = fake_computers
-        
-        result_json = main.get_gpo_computers("gpo_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.gpos.get_computers.assert_called_once_with("gpo_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "gpo_computers" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_gpo_controllers(self, mock_api):
-        """Test get_gpo_controllers MCP tool"""
-        fake_controllers = {"data": [{"objectid": "ctrl1", "name": "GPO_CONTROLLER"}], "count": 1}
-        mock_api.gpos.get_controllers.return_value = fake_controllers
-        
-        result_json = main.get_gpo_controllers("gpo_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.gpos.get_controllers.assert_called_once_with("gpo_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "gpo_controllers" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_gpo_ous(self, mock_api):
-        """Test get_gpo_ous MCP tool"""
-        fake_ous = {"data": [{"objectid": "ou1", "name": "TARGET_OU"}], "count": 1}
-        mock_api.gpos.get_ous.return_value = fake_ous
-        
-        result_json = main.get_gpo_ous("gpo_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.gpos.get_ous.assert_called_once_with("gpo_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "gpo_ous" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_gpo_tier_zeros(self, mock_api):
-        """Test get_gpo_tier_zeros MCP tool"""
-        fake_tier_zeros = {"data": [{"objectid": "tz1", "name": "TIER_ZERO"}], "count": 1}
-        mock_api.gpos.get_tier_zeros.return_value = fake_tier_zeros
-        
-        result_json = main.get_gpo_tier_zeros("gpo_id_123", 0, 100)
-        result = json.loads(result_json)
-        
-        mock_api.gpos.get_tier_zeros.assert_called_once_with("gpo_id_123", limit=0, skip=100)
-        assert result["count"] == 1
-        assert "gpo_tier_zeros" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_gpo_users(self, mock_api):
-        """Test get_gpo_users MCP tool"""
-        fake_users = {"data": [{"objectid": "user1", "name": "gpo_user@domain.local"}], "count": 1}
-        mock_api.gpos.get_users.return_value = fake_users
-        
-        result_json = main.get_gpo_users("gpo_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.gpos.get_users.assert_called_once_with("gpo_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "gpo_users" in result
-
-
-class TestGraphMCPTools:
-    """Test all graph-related MCP tools"""
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_search_graph(self, mock_api):
-        """Test search_graph MCP tool"""
-        fake_results = {"data": [{"objectid": "node1", "name": "TARGET_NODE"}]}
-        mock_api.graph.search.return_value = fake_results
-        
-        result_json = main.search_graph("Domain Admins", "fuzzy")
-        result = json.loads(result_json)
-        
-        mock_api.graph.search.assert_called_once_with("Domain Admins", "fuzzy")
-        assert "results" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_shortest_path(self, mock_api):
-        """Test get_shortest_path MCP tool"""
-        fake_path = {"data": {"nodes": [], "edges": []}}
-        mock_api.graph.get_shortest_path.return_value = fake_path
-        
-        result_json = main.get_shortest_path("start_node", "end_node")
-        result = json.loads(result_json)
-        
-        mock_api.graph.get_shortest_path.assert_called_once_with("start_node", "end_node", None)
-        assert "path" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_edge_composition(self, mock_api):
-        """Test get_edge_composition MCP tool"""
-        fake_composition = {"data": {"components": []}}
-        mock_api.graph.get_edge_composition.return_value = fake_composition
-        
-        result_json = main.get_edge_composition(123, 456, "AdminTo")
-        result = json.loads(result_json)
-        
-        mock_api.graph.get_edge_composition.assert_called_once_with(123, 456, "AdminTo")
-        assert "composition" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_relay_targets(self, mock_api):
-        """Test get_relay_targets MCP tool"""
-        fake_targets = {"data": {"targets": []}}
-        mock_api.graph.get_relay_targets.return_value = fake_targets
-        
-        result_json = main.get_relay_targets(123, 456, "CanRDP")
-        result = json.loads(result_json)
-        
-        mock_api.graph.get_relay_targets.assert_called_once_with(123, 456, "CanRDP")
-        assert "targets" in result
-
-
-class TestADCSMCPTools:
-    """Test all ADCS-related MCP tools"""
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_cert_template_info(self, mock_api):
-        """Test get_cert_template_info MCP tool"""
-        fake_template = {"data": {"objectid": "tmpl1", "name": "User Certificate"}}
-        mock_api.adcs.get_cert_template_info.return_value = fake_template
-        
-        result_json = main.get_cert_template_info("template_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.adcs.get_cert_template_info.assert_called_once_with("template_id_123")
-        assert "cert_template_info" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_cert_template_controllers(self, mock_api):
-        """Test get_cert_template_controllers MCP tool"""
-        fake_controllers = {"data": [{"objectid": "ctrl1", "name": "PKI_ADMIN"}], "count": 1}
-        mock_api.adcs.get_cert_template_controllers.return_value = fake_controllers
-        
-        result_json = main.get_cert_template_controllers("template_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.adcs.get_cert_template_controllers.assert_called_once_with("template_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "cert_template_controllers" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_root_ca_info(self, mock_api):
-        """Test get_root_ca_info MCP tool"""
-        fake_ca = {"data": {"objectid": "ca1", "name": "Root CA"}}
-        mock_api.adcs.get_root_ca_info.return_value = fake_ca
-        
-        result_json = main.get_root_ca_info("ca_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.adcs.get_root_ca_info.assert_called_once_with("ca_id_123")
-        assert "root_ca_info" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_root_ca_controllers(self, mock_api):
-        """Test get_root_ca_controllers MCP tool"""
-        fake_controllers = {"data": [{"objectid": "ctrl1", "name": "CA_ADMIN"}], "count": 1}
-        mock_api.adcs.get_root_ca_controllers.return_value = fake_controllers
-        
-        result_json = main.get_root_ca_controllers("ca_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.adcs.get_root_ca_controllers.assert_called_once_with("ca_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "root_ca_controllers" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_enterprise_ca_info(self, mock_api):
-        """Test get_enterprise_ca_info MCP tool"""
-        fake_ca = {"data": {"objectid": "eca1", "name": "Enterprise CA"}}
-        mock_api.adcs.get_enterprise_ca_info.return_value = fake_ca
-        
-        result_json = main.get_enterprise_ca_info("ca_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.adcs.get_enterprise_ca_info.assert_called_once_with("ca_id_123")
-        assert "enterprise_ca_info" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_enterprise_ca_controllers(self, mock_api):
-        """Test get_enterprise_ca_controllers MCP tool"""
-        fake_controllers = {"data": [{"objectid": "ctrl1", "name": "ENT_CA_ADMIN"}], "count": 1}
-        mock_api.adcs.get_enterprise_ca_controllers.return_value = fake_controllers
-        
-        result_json = main.get_enterprise_ca_controllers("ca_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.adcs.get_enterprise_ca_controllers.assert_called_once_with("ca_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "enterprise_ca_controllers" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_get_aia_ca_controllers(self, mock_api):
-        """Test get_aia_ca_controllers MCP tool"""
-        fake_controllers = {"data": [{"objectid": "ctrl1", "name": "AIA_CA_ADMIN"}], "count": 1}
-        mock_api.adcs.get_aia_ca_controllers.return_value = fake_controllers
-        
-        result_json = main.get_aia_ca_controllers("ca_id_123")
-        result = json.loads(result_json)
-        
-        mock_api.adcs.get_aia_ca_controllers.assert_called_once_with("ca_id_123", limit=100, skip=0)
-        assert result["count"] == 1
-        assert "aia_ca_controllers" in result
-
-
-class TestCypherMCPTools:
-    """Test Cypher-related MCP tools"""
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_run_cypher_query(self, mock_api):
-        """Test run_cypher_query MCP tool"""
-        fake_results = {"data": {"nodes": [], "edges": []}}
-        mock_api.cypher.run_query.return_value = fake_results
-        
-        result_json = main.run_cypher_query("MATCH (n) RETURN n LIMIT 10")
-        result = json.loads(result_json)
-        
-        mock_api.cypher.run_query.assert_called_once_with("MATCH (n) RETURN n LIMIT 10", True)
-        assert "result" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_create_saved_query(self, mock_api):
-        """Test create_saved_query MCP tool"""
-        fake_query = {"data": {"id": 123, "name": "My Query"}}
-        mock_api.cypher.create_saved_query.return_value = fake_query
-        
-        result_json = main.create_saved_query("Test Query", "MATCH (n) RETURN n")
-        result = json.loads(result_json)
-        
-        mock_api.cypher.create_saved_query.assert_called_once_with("Test Query", "MATCH (n) RETURN n")
-        assert "query" in result
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_list_saved_queries(self, mock_api):
-        """Test list_saved_queries MCP tool"""
-        fake_queries = {"data": [{"id": 123, "name": "Query 1"}]}
-        mock_api.cypher.list_saved_queries.return_value = fake_queries
-        
-        result_json = main.list_saved_queries()
-        result = json.loads(result_json)
-        
-        mock_api.cypher.list_saved_queries.assert_called_once_with(0, 100, None)
-        assert "queries" in result
-
-
-class TestErrorHandling:
-    """Test error handling across all MCP tools"""
-
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_domain_tool_error_handling(self, mock_api):
-        """Test error handling in domain tools"""
-        mock_api.domains.get_all.side_effect = Exception("API Error")
-        
-        result_json = main.get_domains()
-        result = json.loads(result_json)
-        
+import main
+from lib.bloodhound_api import BloodhoundAPIError, BloodhoundConnectionError
+
+
+# ---------------------------------------------------------------------------
+# Shared fixtures
+# ---------------------------------------------------------------------------
+
+DOMAIN_ID = "S-1-5-21-111111111-222222222-333333333"
+USER_ID = "S-1-5-21-111111111-222222222-333333333-1234"
+GROUP_ID = "S-1-5-21-111111111-222222222-333333333-512"
+COMPUTER_ID = "S-1-5-21-111111111-222222222-333333333-1001"
+OU_ID = "1A2B3C4D-1234-5678-ABCD-1234567890AB"
+GPO_ID = "5E6F7A8B-1234-5678-ABCD-1234567890AB"
+TEMPLATE_ID = "9C0D1E2F-1234-5678-ABCD-1234567890AB"
+CA_ID = "3A4B5C6D-1234-5678-ABCD-1234567890AB"
+QUERY_ID = "42"
+
+
+def make_api_error(status_code: int) -> BloodhoundAPIError:
+    response = MagicMock()
+    response.status_code = status_code
+    return BloodhoundAPIError(f"HTTP {status_code}", response)
+
+
+# ---------------------------------------------------------------------------
+# _handle_tool_call
+# ---------------------------------------------------------------------------
+
+
+class TestHandleToolCall:
+    def test_dispatches_to_correct_handler(self):
+        handlers = {
+            "foo": lambda: {"key": "value"},
+            "bar": lambda: {"key": "other"},
+        }
+        result = json.loads(main._handle_tool_call("foo", handlers))
+        assert result["info_type"] == "foo"
+        assert result["data"] == {"key": "value"}
+
+    def test_unknown_info_type_returns_error(self):
+        handlers = {"a": lambda: {}, "b": lambda: {}}
+        result = json.loads(main._handle_tool_call("z", handlers))
         assert "error" in result
-        assert "Failed to retrieve domains" in result["error"]
+        assert "z" in result["error"]
+        assert "a" in result["error"]
 
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_user_tool_error_handling(self, mock_api):
-        """Test error handling in user tools"""
-        mock_api.users.get_info.side_effect = Exception("User not found")
-        
-        result_json = main.get_user_info("nonexistent_user")
-        result = json.loads(result_json)
-        
-        assert "error" in result
-        assert "Failed to retrieve user info" in result["error"]
+    def test_context_kwargs_included_in_response(self):
+        handlers = {"x": lambda: []}
+        result = json.loads(main._handle_tool_call("x", handlers, user_id="U1"))
+        assert result["user_id"] == "U1"
 
-    @pytest.mark.skipif(not MAIN_IMPORTED, reason="main.py could not be imported")
-    @patch("main.bloodhound_api")
-    def test_cypher_tool_error_handling(self, mock_api):
-        """Test error handling in Cypher tools"""
-        mock_api.cypher.run_query.side_effect = Exception("Invalid query")
-        
-        result_json = main.run_cypher_query("INVALID QUERY")
-        result = json.loads(result_json)
-        
+    def test_connection_error_returns_error_json(self):
+        def boom():
+            raise BloodhoundConnectionError("unreachable")
+
+        result = json.loads(main._handle_tool_call("bad", {"bad": boom}))
         assert "error" in result
-        assert "Failed to execute Cypher query" in result["error"]
+        assert "Connection error" in result["error"]
+
+    def test_api_error_returns_error_json(self):
+        def boom():
+            raise make_api_error(403)
+
+        result = json.loads(main._handle_tool_call("bad", {"bad": boom}))
+        assert "error" in result
+        assert "403" in result["error"]
+
+    def test_unexpected_error_returns_error_json(self):
+        def boom():
+            raise ValueError("something broke")
+
+        result = json.loads(main._handle_tool_call("bad", {"bad": boom}))
+        assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# domain_info
+# ---------------------------------------------------------------------------
+
+
+class TestDomainInfo:
+    @patch("main.bloodhound_api")
+    def test_list(self, api):
+        api.domains.get_all.return_value = [{"name": "CORP.LOCAL"}]
+        result = json.loads(main.domain_info(info_type="list"))
+        assert result["info_type"] == "list"
+        assert result["data"] == [{"name": "CORP.LOCAL"}]
+        api.domains.get_all.assert_called_once()
+
+    @patch("main.bloodhound_api")
+    def test_search(self, api):
+        api.domains.search_objects.return_value = [{"name": "JDOE"}]
+        result = json.loads(main.domain_info(info_type="search", query="JDOE"))
+        assert result["info_type"] == "search"
+        api.domains.search_objects.assert_called_once_with(
+            "JDOE", None, limit=100, skip=0
+        )
+
+    @patch("main.bloodhound_api")
+    def test_users(self, api):
+        api.domains.get_users.return_value = []
+        result = json.loads(main.domain_info(info_type="users", domain_id=DOMAIN_ID))
+        assert result["info_type"] == "users"
+        api.domains.get_users.assert_called_once_with(DOMAIN_ID, limit=100, skip=0)
+
+    @patch("main.bloodhound_api")
+    def test_groups(self, api):
+        api.domains.get_groups.return_value = []
+        result = json.loads(main.domain_info(info_type="groups", domain_id=DOMAIN_ID))
+        assert result["info_type"] == "groups"
+
+    @patch("main.bloodhound_api")
+    def test_computers(self, api):
+        api.domains.get_computers.return_value = []
+        result = json.loads(
+            main.domain_info(info_type="computers", domain_id=DOMAIN_ID)
+        )
+        assert result["info_type"] == "computers"
+
+    @patch("main.bloodhound_api")
+    def test_controllers(self, api):
+        api.domains.get_controllers.return_value = []
+        result = json.loads(
+            main.domain_info(info_type="controllers", domain_id=DOMAIN_ID)
+        )
+        assert result["info_type"] == "controllers"
+
+    @patch("main.bloodhound_api")
+    def test_gpos(self, api):
+        api.domains.get_gpos.return_value = []
+        result = json.loads(main.domain_info(info_type="gpos", domain_id=DOMAIN_ID))
+        assert result["info_type"] == "gpos"
+
+    @patch("main.bloodhound_api")
+    def test_ous(self, api):
+        api.domains.get_ous.return_value = []
+        result = json.loads(main.domain_info(info_type="ous", domain_id=DOMAIN_ID))
+        assert result["info_type"] == "ous"
+
+    @patch("main.bloodhound_api")
+    def test_dc_syncers(self, api):
+        api.domains.get_dc_syncers.return_value = []
+        result = json.loads(
+            main.domain_info(info_type="dc_syncers", domain_id=DOMAIN_ID)
+        )
+        assert result["info_type"] == "dc_syncers"
+
+    @patch("main.bloodhound_api")
+    def test_foreign_admins(self, api):
+        api.domains.get_foreign_admins.return_value = []
+        result = json.loads(
+            main.domain_info(info_type="foreign_admins", domain_id=DOMAIN_ID)
+        )
+        assert result["info_type"] == "foreign_admins"
+
+    @patch("main.bloodhound_api")
+    def test_foreign_gpo_controllers(self, api):
+        api.domains.get_foreign_gpo_controllers.return_value = []
+        result = json.loads(
+            main.domain_info(info_type="foreign_gpo_controllers", domain_id=DOMAIN_ID)
+        )
+        assert result["info_type"] == "foreign_gpo_controllers"
+
+    @patch("main.bloodhound_api")
+    def test_foreign_groups(self, api):
+        api.domains.get_foreign_groups.return_value = []
+        result = json.loads(
+            main.domain_info(info_type="foreign_groups", domain_id=DOMAIN_ID)
+        )
+        assert result["info_type"] == "foreign_groups"
+
+    @patch("main.bloodhound_api")
+    def test_foreign_users(self, api):
+        api.domains.get_foreign_users.return_value = []
+        result = json.loads(
+            main.domain_info(info_type="foreign_users", domain_id=DOMAIN_ID)
+        )
+        assert result["info_type"] == "foreign_users"
+
+    @patch("main.bloodhound_api")
+    def test_inbound_trusts(self, api):
+        api.domains.get_inbound_trusts.return_value = []
+        result = json.loads(
+            main.domain_info(info_type="inbound_trusts", domain_id=DOMAIN_ID)
+        )
+        assert result["info_type"] == "inbound_trusts"
+
+    @patch("main.bloodhound_api")
+    def test_outbound_trusts(self, api):
+        api.domains.get_outbound_trusts.return_value = []
+        result = json.loads(
+            main.domain_info(info_type="outbound_trusts", domain_id=DOMAIN_ID)
+        )
+        assert result["info_type"] == "outbound_trusts"
+
+    @patch("main.bloodhound_api")
+    def test_pagination_params_forwarded(self, api):
+        api.domains.get_users.return_value = []
+        main.domain_info(info_type="users", domain_id=DOMAIN_ID, limit=25, skip=50)
+        api.domains.get_users.assert_called_once_with(DOMAIN_ID, limit=25, skip=50)
+
+    def test_unknown_info_type(self):
+        result = json.loads(main.domain_info(info_type="nonexistent"))
+        assert "error" in result
+
+    @patch("main.bloodhound_api")
+    def test_api_error_propagates(self, api):
+        api.domains.get_all.side_effect = make_api_error(500)
+        result = json.loads(main.domain_info(info_type="list"))
+        assert "error" in result
+        assert "500" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# user_info
+# ---------------------------------------------------------------------------
+
+
+class TestUserInfo:
+    @patch("main.bloodhound_api")
+    def test_info(self, api):
+        api.users.get_info.return_value = {"name": "JDOE@CORP.LOCAL", "enabled": True}
+        result = json.loads(main.user_info(USER_ID, info_type="info"))
+        assert result["info_type"] == "info"
+        assert result["user_id"] == USER_ID
+        api.users.get_info.assert_called_once_with(USER_ID)
+
+    @patch("main.bloodhound_api")
+    def test_admin_rights(self, api):
+        api.users.get_admin_rights.return_value = []
+        result = json.loads(main.user_info(USER_ID, info_type="admin_rights"))
+        assert result["info_type"] == "admin_rights"
+        api.users.get_admin_rights.assert_called_once_with(USER_ID, limit=100, skip=0)
+
+    @patch("main.bloodhound_api")
+    def test_constrained_delegation(self, api):
+        api.users.get_constrained_delegation_rights.return_value = []
+        result = json.loads(
+            main.user_info(USER_ID, info_type="constrained_delegation")
+        )
+        assert result["info_type"] == "constrained_delegation"
+
+    @patch("main.bloodhound_api")
+    def test_controllables(self, api):
+        api.users.get_controllables.return_value = []
+        result = json.loads(main.user_info(USER_ID, info_type="controllables"))
+        assert result["info_type"] == "controllables"
+
+    @patch("main.bloodhound_api")
+    def test_controllers(self, api):
+        api.users.get_controllers.return_value = []
+        result = json.loads(main.user_info(USER_ID, info_type="controllers"))
+        assert result["info_type"] == "controllers"
+
+    @patch("main.bloodhound_api")
+    def test_dcom_rights(self, api):
+        api.users.get_dcom_rights.return_value = []
+        result = json.loads(main.user_info(USER_ID, info_type="dcom_rights"))
+        assert result["info_type"] == "dcom_rights"
+
+    @patch("main.bloodhound_api")
+    def test_memberships(self, api):
+        api.users.get_memberships.return_value = [{"name": "DOMAIN ADMINS@CORP.LOCAL"}]
+        result = json.loads(main.user_info(USER_ID, info_type="memberships"))
+        assert result["info_type"] == "memberships"
+        assert len(result["data"]) == 1
+
+    @patch("main.bloodhound_api")
+    def test_ps_remote_rights(self, api):
+        api.users.get_ps_remote_rights.return_value = []
+        result = json.loads(main.user_info(USER_ID, info_type="ps_remote_rights"))
+        assert result["info_type"] == "ps_remote_rights"
+
+    @patch("main.bloodhound_api")
+    def test_rdp_rights(self, api):
+        api.users.get_rdp_rights.return_value = []
+        result = json.loads(main.user_info(USER_ID, info_type="rdp_rights"))
+        assert result["info_type"] == "rdp_rights"
+
+    @patch("main.bloodhound_api")
+    def test_sessions(self, api):
+        api.users.get_sessions.return_value = []
+        result = json.loads(main.user_info(USER_ID, info_type="sessions"))
+        assert result["info_type"] == "sessions"
+
+    @patch("main.bloodhound_api")
+    def test_sql_admin_rights(self, api):
+        api.users.get_sql_admin_rights.return_value = []
+        result = json.loads(main.user_info(USER_ID, info_type="sql_admin_rights"))
+        assert result["info_type"] == "sql_admin_rights"
+
+    def test_unknown_info_type(self):
+        result = json.loads(main.user_info(USER_ID, info_type="bad"))
+        assert "error" in result
+
+    @patch("main.bloodhound_api")
+    def test_user_id_in_context(self, api):
+        api.users.get_info.return_value = {}
+        result = json.loads(main.user_info(USER_ID, info_type="info"))
+        assert result["user_id"] == USER_ID
+
+
+# ---------------------------------------------------------------------------
+# group_info
+# ---------------------------------------------------------------------------
+
+
+class TestGroupInfo:
+    @patch("main.bloodhound_api")
+    def test_info(self, api):
+        api.groups.get_info.return_value = {"name": "DOMAIN ADMINS@CORP.LOCAL"}
+        result = json.loads(main.group_info(GROUP_ID, info_type="info"))
+        assert result["info_type"] == "info"
+        assert result["group_id"] == GROUP_ID
+
+    @patch("main.bloodhound_api")
+    def test_admin_rights(self, api):
+        api.groups.get_admin_rights.return_value = []
+        result = json.loads(main.group_info(GROUP_ID, info_type="admin_rights"))
+        assert result["info_type"] == "admin_rights"
+
+    @patch("main.bloodhound_api")
+    def test_controllables(self, api):
+        api.groups.get_controllables.return_value = []
+        result = json.loads(main.group_info(GROUP_ID, info_type="controllables"))
+        assert result["info_type"] == "controllables"
+
+    @patch("main.bloodhound_api")
+    def test_controllers(self, api):
+        api.groups.get_controllers.return_value = []
+        result = json.loads(main.group_info(GROUP_ID, info_type="controllers"))
+        assert result["info_type"] == "controllers"
+
+    @patch("main.bloodhound_api")
+    def test_dcom_rights(self, api):
+        api.groups.get_dcom_rights.return_value = []
+        result = json.loads(main.group_info(GROUP_ID, info_type="dcom_rights"))
+        assert result["info_type"] == "dcom_rights"
+
+    @patch("main.bloodhound_api")
+    def test_members(self, api):
+        api.groups.get_members.return_value = [{"name": "JDOE@CORP.LOCAL"}]
+        result = json.loads(main.group_info(GROUP_ID, info_type="members"))
+        assert result["info_type"] == "members"
+        assert len(result["data"]) == 1
+
+    @patch("main.bloodhound_api")
+    def test_memberships(self, api):
+        api.groups.get_memberships.return_value = []
+        result = json.loads(main.group_info(GROUP_ID, info_type="memberships"))
+        assert result["info_type"] == "memberships"
+
+    @patch("main.bloodhound_api")
+    def test_ps_remote_rights(self, api):
+        api.groups.get_ps_remote_rights.return_value = []
+        result = json.loads(main.group_info(GROUP_ID, info_type="ps_remote_rights"))
+        assert result["info_type"] == "ps_remote_rights"
+
+    @patch("main.bloodhound_api")
+    def test_rdp_rights(self, api):
+        api.groups.get_rdp_rights.return_value = []
+        result = json.loads(main.group_info(GROUP_ID, info_type="rdp_rights"))
+        assert result["info_type"] == "rdp_rights"
+
+    @patch("main.bloodhound_api")
+    def test_sessions(self, api):
+        api.groups.get_sessions.return_value = []
+        result = json.loads(main.group_info(GROUP_ID, info_type="sessions"))
+        assert result["info_type"] == "sessions"
+
+    def test_unknown_info_type(self):
+        result = json.loads(main.group_info(GROUP_ID, info_type="bad"))
+        assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# computer_info
+# ---------------------------------------------------------------------------
+
+
+class TestComputerInfo:
+    @patch("main.bloodhound_api")
+    def test_info(self, api):
+        api.computers.get_info.return_value = {"name": "DC01.CORP.LOCAL"}
+        result = json.loads(main.computer_info(COMPUTER_ID, info_type="info"))
+        assert result["info_type"] == "info"
+        assert result["computer_id"] == COMPUTER_ID
+
+    @patch("main.bloodhound_api")
+    def test_admin_rights(self, api):
+        api.computers.get_admin_rights.return_value = []
+        result = json.loads(main.computer_info(COMPUTER_ID, info_type="admin_rights"))
+        assert result["info_type"] == "admin_rights"
+
+    @patch("main.bloodhound_api")
+    def test_admin_users(self, api):
+        api.computers.get_admin_users.return_value = []
+        result = json.loads(main.computer_info(COMPUTER_ID, info_type="admin_users"))
+        assert result["info_type"] == "admin_users"
+
+    @patch("main.bloodhound_api")
+    def test_constrained_delegation(self, api):
+        api.computers.get_constrained_delegation_rights.return_value = []
+        result = json.loads(
+            main.computer_info(COMPUTER_ID, info_type="constrained_delegation")
+        )
+        assert result["info_type"] == "constrained_delegation"
+
+    @patch("main.bloodhound_api")
+    def test_constrained_users(self, api):
+        api.computers.get_constrained_users.return_value = []
+        result = json.loads(
+            main.computer_info(COMPUTER_ID, info_type="constrained_users")
+        )
+        assert result["info_type"] == "constrained_users"
+
+    @patch("main.bloodhound_api")
+    def test_controllables(self, api):
+        api.computers.get_controllables.return_value = []
+        result = json.loads(main.computer_info(COMPUTER_ID, info_type="controllables"))
+        assert result["info_type"] == "controllables"
+
+    @patch("main.bloodhound_api")
+    def test_controllers(self, api):
+        api.computers.get_controllers.return_value = []
+        result = json.loads(main.computer_info(COMPUTER_ID, info_type="controllers"))
+        assert result["info_type"] == "controllers"
+
+    @patch("main.bloodhound_api")
+    def test_dcom_rights(self, api):
+        api.computers.get_dcom_rights.return_value = []
+        result = json.loads(main.computer_info(COMPUTER_ID, info_type="dcom_rights"))
+        assert result["info_type"] == "dcom_rights"
+
+    @patch("main.bloodhound_api")
+    def test_dcom_users(self, api):
+        api.computers.get_dcom_users.return_value = []
+        result = json.loads(main.computer_info(COMPUTER_ID, info_type="dcom_users"))
+        assert result["info_type"] == "dcom_users"
+
+    @patch("main.bloodhound_api")
+    def test_group_membership(self, api):
+        api.computers.get_group_membership.return_value = []
+        result = json.loads(
+            main.computer_info(COMPUTER_ID, info_type="group_membership")
+        )
+        assert result["info_type"] == "group_membership"
+
+    @patch("main.bloodhound_api")
+    def test_ps_remote_rights(self, api):
+        api.computers.get_ps_remote_rights.return_value = []
+        result = json.loads(
+            main.computer_info(COMPUTER_ID, info_type="ps_remote_rights")
+        )
+        assert result["info_type"] == "ps_remote_rights"
+
+    @patch("main.bloodhound_api")
+    def test_ps_remote_users(self, api):
+        api.computers.get_ps_remote_users.return_value = []
+        result = json.loads(
+            main.computer_info(COMPUTER_ID, info_type="ps_remote_users")
+        )
+        assert result["info_type"] == "ps_remote_users"
+
+    @patch("main.bloodhound_api")
+    def test_rdp_rights(self, api):
+        api.computers.get_rdp_rights.return_value = []
+        result = json.loads(main.computer_info(COMPUTER_ID, info_type="rdp_rights"))
+        assert result["info_type"] == "rdp_rights"
+
+    @patch("main.bloodhound_api")
+    def test_rdp_users(self, api):
+        api.computers.get_rdp_users.return_value = []
+        result = json.loads(main.computer_info(COMPUTER_ID, info_type="rdp_users"))
+        assert result["info_type"] == "rdp_users"
+
+    @patch("main.bloodhound_api")
+    def test_sessions(self, api):
+        api.computers.get_sessions.return_value = []
+        result = json.loads(main.computer_info(COMPUTER_ID, info_type="sessions"))
+        assert result["info_type"] == "sessions"
+
+    @patch("main.bloodhound_api")
+    def test_sql_admins(self, api):
+        api.computers.get_sql_admins.return_value = []
+        result = json.loads(main.computer_info(COMPUTER_ID, info_type="sql_admins"))
+        assert result["info_type"] == "sql_admins"
+
+    def test_unknown_info_type(self):
+        result = json.loads(main.computer_info(COMPUTER_ID, info_type="bad"))
+        assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# ou_info
+# ---------------------------------------------------------------------------
+
+
+class TestOuInfo:
+    @patch("main.bloodhound_api")
+    def test_info(self, api):
+        api.ous.get_info.return_value = {"name": "IT"}
+        result = json.loads(main.ou_info(OU_ID, info_type="info"))
+        assert result["info_type"] == "info"
+        assert result["ou_id"] == OU_ID
+
+    @patch("main.bloodhound_api")
+    def test_computers(self, api):
+        api.ous.get_computers.return_value = []
+        result = json.loads(main.ou_info(OU_ID, info_type="computers"))
+        assert result["info_type"] == "computers"
+
+    @patch("main.bloodhound_api")
+    def test_groups(self, api):
+        api.ous.get_groups.return_value = []
+        result = json.loads(main.ou_info(OU_ID, info_type="groups"))
+        assert result["info_type"] == "groups"
+
+    @patch("main.bloodhound_api")
+    def test_gpos(self, api):
+        api.ous.get_gpos.return_value = []
+        result = json.loads(main.ou_info(OU_ID, info_type="gpos"))
+        assert result["info_type"] == "gpos"
+
+    @patch("main.bloodhound_api")
+    def test_users(self, api):
+        api.ous.get_users.return_value = []
+        result = json.loads(main.ou_info(OU_ID, info_type="users"))
+        assert result["info_type"] == "users"
+
+    def test_unknown_info_type(self):
+        result = json.loads(main.ou_info(OU_ID, info_type="bad"))
+        assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# gpo_info
+# ---------------------------------------------------------------------------
+
+
+class TestGpoInfo:
+    @patch("main.bloodhound_api")
+    def test_info(self, api):
+        api.gpos.get_info.return_value = {"name": "Default Domain Policy"}
+        result = json.loads(main.gpo_info(GPO_ID, info_type="info"))
+        assert result["info_type"] == "info"
+        assert result["gpo_id"] == GPO_ID
+
+    @patch("main.bloodhound_api")
+    def test_computers(self, api):
+        api.gpos.get_computers.return_value = []
+        result = json.loads(main.gpo_info(GPO_ID, info_type="computers"))
+        assert result["info_type"] == "computers"
+
+    @patch("main.bloodhound_api")
+    def test_controllers(self, api):
+        api.gpos.get_controllers.return_value = []
+        result = json.loads(main.gpo_info(GPO_ID, info_type="controllers"))
+        assert result["info_type"] == "controllers"
+
+    @patch("main.bloodhound_api")
+    def test_ous(self, api):
+        api.gpos.get_ous.return_value = []
+        result = json.loads(main.gpo_info(GPO_ID, info_type="ous"))
+        assert result["info_type"] == "ous"
+
+    @patch("main.bloodhound_api")
+    def test_tier_zeros(self, api):
+        api.gpos.get_tier_zeros.return_value = []
+        result = json.loads(main.gpo_info(GPO_ID, info_type="tier_zeros"))
+        assert result["info_type"] == "tier_zeros"
+
+    @patch("main.bloodhound_api")
+    def test_users(self, api):
+        api.gpos.get_users.return_value = []
+        result = json.loads(main.gpo_info(GPO_ID, info_type="users"))
+        assert result["info_type"] == "users"
+
+    def test_unknown_info_type(self):
+        result = json.loads(main.gpo_info(GPO_ID, info_type="bad"))
+        assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# graph_analysis
+# ---------------------------------------------------------------------------
+
+
+class TestGraphAnalysis:
+    @patch("main.bloodhound_api")
+    def test_search(self, api):
+        api.graph.search.return_value = [{"name": "DC01"}]
+        result = json.loads(
+            main.graph_analysis(info_type="search", query="DC01", search_type="fuzzy")
+        )
+        assert result["info_type"] == "search"
+        api.graph.search.assert_called_once_with("DC01", "fuzzy")
+
+    @patch("main.bloodhound_api")
+    def test_shortest_path(self, api):
+        api.graph.get_shortest_path.return_value = {"path": []}
+        result = json.loads(
+            main.graph_analysis(
+                info_type="shortest_path",
+                start_node=USER_ID,
+                end_node=GROUP_ID,
+            )
+        )
+        assert result["info_type"] == "shortest_path"
+        api.graph.get_shortest_path.assert_called_once_with(USER_ID, GROUP_ID, None)
+
+    @patch("main.bloodhound_api")
+    def test_shortest_path_with_relationship_kinds(self, api):
+        api.graph.get_shortest_path.return_value = {"path": []}
+        main.graph_analysis(
+            info_type="shortest_path",
+            start_node=USER_ID,
+            end_node=GROUP_ID,
+            relationship_kinds="MemberOf,AdminTo",
+        )
+        api.graph.get_shortest_path.assert_called_once_with(
+            USER_ID, GROUP_ID, "MemberOf,AdminTo"
+        )
+
+    @patch("main.bloodhound_api")
+    def test_edge_composition(self, api):
+        api.graph.get_edge_composition.return_value = {"edges": []}
+        result = json.loads(
+            main.graph_analysis(
+                info_type="edge_composition",
+                source_node=USER_ID,
+                target_node=COMPUTER_ID,
+                edge_type="GenericAll",
+            )
+        )
+        assert result["info_type"] == "edge_composition"
+        api.graph.get_edge_composition.assert_called_once_with(
+            USER_ID, COMPUTER_ID, "GenericAll"
+        )
+
+    @patch("main.bloodhound_api")
+    def test_relay_targets(self, api):
+        api.graph.get_relay_targets.return_value = []
+        result = json.loads(
+            main.graph_analysis(
+                info_type="relay_targets",
+                source_node=USER_ID,
+                target_node=COMPUTER_ID,
+                edge_type="CoerceAndRelayNTLMToSMB",
+            )
+        )
+        assert result["info_type"] == "relay_targets"
+
+    def test_unknown_info_type(self):
+        result = json.loads(main.graph_analysis(info_type="bad"))
+        assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# adcs_info
+# ---------------------------------------------------------------------------
+
+
+class TestAdcsInfo:
+    @patch("main.bloodhound_api")
+    def test_cert_template_info(self, api):
+        api.adcs.get_cert_template_info.return_value = {"name": "UserTemplate"}
+        result = json.loads(
+            main.adcs_info(TEMPLATE_ID, info_type="cert_template_info")
+        )
+        assert result["info_type"] == "cert_template_info"
+        assert result["object_id"] == TEMPLATE_ID
+
+    @patch("main.bloodhound_api")
+    def test_cert_template_controllers(self, api):
+        api.adcs.get_cert_template_controllers.return_value = []
+        result = json.loads(
+            main.adcs_info(TEMPLATE_ID, info_type="cert_template_controllers")
+        )
+        assert result["info_type"] == "cert_template_controllers"
+
+    @patch("main.bloodhound_api")
+    def test_root_ca_info(self, api):
+        api.adcs.get_root_ca_info.return_value = {"name": "CORP-ROOT-CA"}
+        result = json.loads(main.adcs_info(CA_ID, info_type="root_ca_info"))
+        assert result["info_type"] == "root_ca_info"
+
+    @patch("main.bloodhound_api")
+    def test_root_ca_controllers(self, api):
+        api.adcs.get_root_ca_controllers.return_value = []
+        result = json.loads(main.adcs_info(CA_ID, info_type="root_ca_controllers"))
+        assert result["info_type"] == "root_ca_controllers"
+
+    @patch("main.bloodhound_api")
+    def test_enterprise_ca_info(self, api):
+        api.adcs.get_enterprise_ca_info.return_value = {"name": "CORP-ENT-CA"}
+        result = json.loads(main.adcs_info(CA_ID, info_type="enterprise_ca_info"))
+        assert result["info_type"] == "enterprise_ca_info"
+
+    @patch("main.bloodhound_api")
+    def test_enterprise_ca_controllers(self, api):
+        api.adcs.get_enterprise_ca_controllers.return_value = []
+        result = json.loads(
+            main.adcs_info(CA_ID, info_type="enterprise_ca_controllers")
+        )
+        assert result["info_type"] == "enterprise_ca_controllers"
+
+    @patch("main.bloodhound_api")
+    def test_aia_ca_controllers(self, api):
+        api.adcs.get_aia_ca_controllers.return_value = []
+        result = json.loads(main.adcs_info(CA_ID, info_type="aia_ca_controllers"))
+        assert result["info_type"] == "aia_ca_controllers"
+
+    def test_unknown_info_type(self):
+        result = json.loads(main.adcs_info(CA_ID, info_type="bad"))
+        assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# cypher_query
+# ---------------------------------------------------------------------------
+
+
+class TestCypherQuery:
+    @patch("main.bloodhound_api")
+    def test_run_success_with_nodes(self, api):
+        api.cypher.run_query.return_value = {
+            "nodes": {"n1": {"objectid": "S-1-5", "label": "User"}},
+            "edges": [],
+        }
+        result = json.loads(
+            main.cypher_query(
+                info_type="run",
+                query="MATCH (n:User) RETURN n LIMIT 1",
+            )
+        )
+        assert result["info_type"] == "run"
+        assert result["success"] is True
+        assert result["node_count"] == 1
+        assert result["edge_count"] == 0
+
+    @patch("main.bloodhound_api")
+    def test_run_success_empty_results(self, api):
+        api.cypher.run_query.return_value = {"nodes": {}, "edges": []}
+        result = json.loads(
+            main.cypher_query(info_type="run", query="MATCH (n:User) RETURN n")
+        )
+        assert result["success"] is True
+        assert result["node_count"] == 0
+
+    @patch("main.bloodhound_api")
+    def test_run_syntax_error(self, api):
+        api.cypher.run_query.side_effect = make_api_error(400)
+        result = json.loads(main.cypher_query(info_type="run", query="MATCH garbage"))
+        assert result["success"] is False
+        assert result["error_type"] == "syntax_error"
+        assert "hint" in result
+
+    @patch("main.bloodhound_api")
+    def test_run_auth_error(self, api):
+        api.cypher.run_query.side_effect = make_api_error(401)
+        result = json.loads(
+            main.cypher_query(info_type="run", query="MATCH (n) RETURN n")
+        )
+        assert result["success"] is False
+        assert result["error_type"] == "auth_error"
+
+    @patch("main.bloodhound_api")
+    def test_run_permission_error(self, api):
+        api.cypher.run_query.side_effect = make_api_error(403)
+        result = json.loads(
+            main.cypher_query(info_type="run", query="MATCH (n) RETURN n")
+        )
+        assert result["success"] is False
+        assert result["error_type"] == "permission_error"
+
+    @patch("main.bloodhound_api")
+    def test_run_not_found(self, api):
+        api.cypher.run_query.side_effect = make_api_error(404)
+        result = json.loads(
+            main.cypher_query(info_type="run", query="MATCH (n) RETURN n")
+        )
+        assert result["success"] is False
+        assert result["error_type"] == "not_found"
+
+    @patch("main.bloodhound_api")
+    def test_run_server_failure(self, api):
+        api.cypher.run_query.side_effect = make_api_error(500)
+        result = json.loads(
+            main.cypher_query(info_type="run", query="MATCH (n) RETURN n")
+        )
+        assert result["success"] is False
+        assert result["error_type"] == "server_failure"
+
+    @patch("main.bloodhound_api")
+    def test_run_server_error_above_500(self, api):
+        api.cypher.run_query.side_effect = make_api_error(503)
+        result = json.loads(
+            main.cypher_query(info_type="run", query="MATCH (n) RETURN n")
+        )
+        assert result["success"] is False
+        assert result["error_type"] == "server_error"
+
+    @patch("main.bloodhound_api")
+    def test_run_metadata_enriched_response(self, api):
+        api.cypher.run_query.return_value = {
+            "metadata": {"has_result": True},
+            "data": {"nodes": {"n1": {}}, "edges": []},
+        }
+        result = json.loads(
+            main.cypher_query(info_type="run", query="MATCH (n) RETURN n")
+        )
+        assert result["success"] is True
+        assert result["has_results"] is True
+
+    def test_interpret_failed_query(self):
+        failed = json.dumps({"success": False, "error": "syntax error"})
+        result = json.loads(
+            main.cypher_query(
+                info_type="interpret",
+                query="MATCH garbage",
+                result_json=failed,
+            )
+        )
+        assert result["info_type"] == "interpret"
+        assert "error" in result["interpretation"].lower()
+
+    def test_interpret_successful_query(self):
+        success = json.dumps(
+            {
+                "success": True,
+                "data": {
+                    "nodes": {"n1": {}, "n2": {}},
+                    "edges": [{"id": "e1"}],
+                },
+            }
+        )
+        result = json.loads(
+            main.cypher_query(
+                info_type="interpret",
+                query="MATCH (n) RETURN n",
+                result_json=success,
+            )
+        )
+        assert result["info_type"] == "interpret"
+        assert result["nodes_found"] == 2
+        assert result["edges_found"] == 1
+        assert result["has_results"] is True
+
+    @patch("main.bloodhound_api")
+    def test_list_saved(self, api):
+        api.cypher.list_saved_queries.return_value = []
+        result = json.loads(main.cypher_query(info_type="list_saved"))
+        assert result["info_type"] == "list_saved"
+
+    @patch("main.bloodhound_api")
+    def test_create_saved(self, api):
+        api.cypher.create_saved_query.return_value = {"id": QUERY_ID}
+        result = json.loads(
+            main.cypher_query(
+                info_type="create_saved",
+                name="DA Members",
+                query="MATCH (n)-[:MemberOf]->(g:Group {name:'DOMAIN ADMINS@CORP.LOCAL'}) RETURN n",
+            )
+        )
+        assert result["info_type"] == "create_saved"
+        api.cypher.create_saved_query.assert_called_once()
+
+    @patch("main.bloodhound_api")
+    def test_get_saved(self, api):
+        api.cypher.get_saved_query.return_value = {"id": QUERY_ID, "name": "DA"}
+        result = json.loads(
+            main.cypher_query(info_type="get_saved", query_id=QUERY_ID)
+        )
+        assert result["info_type"] == "get_saved"
+
+    @patch("main.bloodhound_api")
+    def test_update_saved(self, api):
+        api.cypher.update_saved_query.return_value = {"id": QUERY_ID}
+        result = json.loads(
+            main.cypher_query(
+                info_type="update_saved",
+                query_id=QUERY_ID,
+                name="DA Members Updated",
+            )
+        )
+        assert result["info_type"] == "update_saved"
+
+    @patch("main.bloodhound_api")
+    def test_delete_saved(self, api):
+        api.cypher.delete_saved_query.return_value = None
+        result = json.loads(
+            main.cypher_query(info_type="delete_saved", query_id=QUERY_ID)
+        )
+        assert result["info_type"] == "delete_saved"
+
+    @patch("main.bloodhound_api")
+    def test_share_saved_with_user_ids(self, api):
+        api.cypher.share_saved_query.return_value = None
+        main.cypher_query(
+            info_type="share_saved",
+            query_id=QUERY_ID,
+            user_ids="1,2,3",
+            public=False,
+        )
+        api.cypher.share_saved_query.assert_called_once_with(QUERY_ID, [1, 2, 3], False)
+
+    @patch("main.bloodhound_api")
+    def test_share_saved_public(self, api):
+        api.cypher.share_saved_query.return_value = None
+        main.cypher_query(info_type="share_saved", query_id=QUERY_ID, public=True)
+        api.cypher.share_saved_query.assert_called_once_with(QUERY_ID, [], True)
+
+    @patch("main.bloodhound_api")
+    def test_validate(self, api):
+        api.cypher.validate_query.return_value = {"valid": True}
+        result = json.loads(
+            main.cypher_query(
+                info_type="validate",
+                query="MATCH (n:User) RETURN n",
+            )
+        )
+        assert result["info_type"] == "validate"
+
+    def test_unknown_info_type(self):
+        result = json.loads(main.cypher_query(info_type="bad"))
+        assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# data_quality
+# ---------------------------------------------------------------------------
+
+
+class TestDataQuality:
+    @patch("main.bloodhound_api")
+    def test_completeness(self, api):
+        api.data_quality.get_completeness_stats.return_value = {"score": 95}
+        result = json.loads(main.data_quality(info_type="completeness"))
+        assert result["info_type"] == "completeness"
+        api.data_quality.get_completeness_stats.assert_called_once()
+
+    @patch("main.bloodhound_api")
+    def test_ad_domain(self, api):
+        api.data_quality.get_ad_domain_data_quality_stats.return_value = []
+        result = json.loads(
+            main.data_quality(info_type="ad_domain", domain_id=DOMAIN_ID)
+        )
+        assert result["info_type"] == "ad_domain"
+        api.data_quality.get_ad_domain_data_quality_stats.assert_called_once_with(
+            DOMAIN_ID, None, None, None, 0, 100
+        )
+
+    @patch("main.bloodhound_api")
+    def test_azure_tenant(self, api):
+        api.data_quality.get_azure_tenant_data_quality_stats.return_value = []
+        result = json.loads(
+            main.data_quality(info_type="azure_tenant", tenant_id="TENANT-123")
+        )
+        assert result["info_type"] == "azure_tenant"
+
+    @patch("main.bloodhound_api")
+    def test_platform(self, api):
+        api.data_quality.get_platform_data_quality_stats.return_value = []
+        result = json.loads(main.data_quality(info_type="platform", platform_id="ad"))
+        assert result["info_type"] == "platform"
+
+    def test_unknown_info_type(self):
+        result = json.loads(main.data_quality(info_type="bad"))
+        assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# custom_nodes
+# ---------------------------------------------------------------------------
+
+
+class TestCustomNodes:
+    @patch("main.bloodhound_api")
+    def test_list(self, api):
+        api.custom_nodes.get_all_custom_nodes.return_value = []
+        result = json.loads(main.custom_nodes(info_type="list"))
+        assert result["info_type"] == "list"
+        api.custom_nodes.get_all_custom_nodes.assert_called_once()
+
+    @patch("main.bloodhound_api")
+    def test_get(self, api):
+        api.custom_nodes.get_custom_node.return_value = {"kind": "SQLServer"}
+        result = json.loads(main.custom_nodes(info_type="get", kind_name="SQLServer"))
+        assert result["info_type"] == "get"
+        api.custom_nodes.get_custom_node.assert_called_once_with("SQLServer")
+
+    @patch("main.bloodhound_api")
+    def test_create_without_icon(self, api):
+        api.custom_nodes.create_custom_nodes.return_value = {"created": True}
+        types_json = json.dumps({"SQLServer": {"color": "#ff0000"}})
+        result = json.loads(
+            main.custom_nodes(info_type="create", custom_types_json=types_json)
+        )
+        assert result["info_type"] == "create"
+        api.custom_nodes.create_custom_nodes.assert_called_once()
+
+    @patch("main.bloodhound_api")
+    def test_create_with_valid_icon(self, api):
+        api.custom_nodes.validate_icon_config.return_value = {"valid": True}
+        api.custom_nodes.create_custom_nodes.return_value = {"created": True}
+        types_json = json.dumps({"SQLServer": {"icon": {"type": "font-awesome"}}})
+        result = json.loads(
+            main.custom_nodes(info_type="create", custom_types_json=types_json)
+        )
+        assert result["info_type"] == "create"
+
+    @patch("main.bloodhound_api")
+    def test_create_with_invalid_icon_returns_error(self, api):
+        api.custom_nodes.validate_icon_config.return_value = {
+            "valid": False,
+            "error": "bad icon",
+        }
+        types_json = json.dumps({"SQLServer": {"icon": {"type": "bad"}}})
+        result = json.loads(
+            main.custom_nodes(info_type="create", custom_types_json=types_json)
+        )
+        assert result["info_type"] == "create"
+        assert "error" in result["data"]
+
+    @patch("main.bloodhound_api")
+    def test_delete(self, api):
+        api.custom_nodes.delete_custom_node.return_value = None
+        result = json.loads(
+            main.custom_nodes(info_type="delete", kind_name="SQLServer")
+        )
+        assert result["info_type"] == "delete"
+        api.custom_nodes.delete_custom_node.assert_called_once_with("SQLServer")
+
+    @patch("main.bloodhound_api")
+    def test_validate_icon(self, api):
+        api.custom_nodes.validate_icon_config.return_value = {"valid": True}
+        result = json.loads(
+            main.custom_nodes(
+                info_type="validate_icon",
+                icon_config_json=json.dumps({"type": "font-awesome", "name": "server"}),
+            )
+        )
+        assert result["info_type"] == "validate_icon"
+
+    def test_unknown_info_type(self):
+        result = json.loads(main.custom_nodes(info_type="bad"))
+        assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# asset_groups
+# ---------------------------------------------------------------------------
+
+
+class TestAssetGroups:
+    @patch("main.bloodhound_api")
+    def test_list(self, api):
+        api.asset_groups.list_asset_groups.return_value = []
+        result = json.loads(main.asset_groups(info_type="list"))
+        assert result["info_type"] == "list"
+
+    @patch("main.bloodhound_api")
+    def test_get(self, api):
+        api.asset_groups.get_asset_group.return_value = {"id": "1", "name": "Tier Zero"}
+        result = json.loads(main.asset_groups(info_type="get", asset_group_id="1"))
+        assert result["info_type"] == "get"
+        api.asset_groups.get_asset_group.assert_called_once_with("1")
+
+    @patch("main.bloodhound_api")
+    def test_create(self, api):
+        api.asset_groups.create_asset_group.return_value = {"id": "2"}
+        result = json.loads(
+            main.asset_groups(info_type="create", name="High Value", tag="high_value")
+        )
+        assert result["info_type"] == "create"
+        api.asset_groups.create_asset_group.assert_called_once_with(
+            "High Value", "high_value"
+        )
+
+    @patch("main.bloodhound_api")
+    def test_update(self, api):
+        api.asset_groups.update_asset_group.return_value = {"id": "1"}
+        result = json.loads(
+            main.asset_groups(
+                info_type="update", asset_group_id="1", name="Tier Zero Updated"
+            )
+        )
+        assert result["info_type"] == "update"
+
+    @patch("main.bloodhound_api")
+    def test_delete(self, api):
+        api.asset_groups.delete_asset_group.return_value = None
+        result = json.loads(
+            main.asset_groups(info_type="delete", asset_group_id="1")
+        )
+        assert result["info_type"] == "delete"
+
+    @patch("main.bloodhound_api")
+    def test_collections(self, api):
+        api.asset_groups.list_asset_group_collections.return_value = []
+        result = json.loads(
+            main.asset_groups(info_type="collections", asset_group_id="1")
+        )
+        assert result["info_type"] == "collections"
+
+    @patch("main.bloodhound_api")
+    def test_member_counts(self, api):
+        api.asset_groups.list_asset_group_member_counts.return_value = {}
+        result = json.loads(
+            main.asset_groups(info_type="member_counts", asset_group_id="1")
+        )
+        assert result["info_type"] == "member_counts"
+
+    @patch("main.bloodhound_api")
+    def test_update_selectors(self, api):
+        api.asset_groups.update_asset_group_selectors.return_value = {}
+        selectors = json.dumps([{"selector_name": "S-1-5-21-*", "sid": "S-1-5-21-*"}])
+        result = json.loads(
+            main.asset_groups(
+                info_type="update_selectors",
+                asset_group_id="1",
+                selectors_json=selectors,
+            )
+        )
+        assert result["info_type"] == "update_selectors"
+
+    @patch("main.bloodhound_api")
+    def test_list_tags(self, api):
+        api.asset_groups.list_asset_group_tags.return_value = []
+        result = json.loads(main.asset_groups(info_type="list_tags"))
+        assert result["info_type"] == "list_tags"
+
+    @patch("main.bloodhound_api")
+    def test_create_tag(self, api):
+        api.asset_groups.create_asset_group_tag.return_value = {"id": "5"}
+        result = json.loads(
+            main.asset_groups(
+                info_type="create_tag", name="Sensitive", tag="sensitive"
+            )
+        )
+        assert result["info_type"] == "create_tag"
+
+    @patch("main.bloodhound_api")
+    def test_tag_members(self, api):
+        api.asset_groups.list_asset_group_tag_members.return_value = []
+        result = json.loads(
+            main.asset_groups(info_type="tag_members", asset_group_tag_id=5)
+        )
+        assert result["info_type"] == "tag_members"
+
+    def test_unknown_info_type(self):
+        result = json.loads(main.asset_groups(info_type="bad"))
+        assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# Response format contract
+# ---------------------------------------------------------------------------
+
+
+class TestResponseFormat:
+    """Verify all tools return valid JSON strings with consistent structure."""
+
+    @patch("main.bloodhound_api")
+    def test_success_response_has_info_type_and_data(self, api):
+        api.domains.get_all.return_value = []
+        raw = main.domain_info(info_type="list")
+        parsed = json.loads(raw)
+        assert "info_type" in parsed
+        assert "data" in parsed
+
+    @patch("main.bloodhound_api")
+    def test_error_response_has_error_key(self, api):
+        api.domains.get_all.side_effect = BloodhoundConnectionError("down")
+        raw = main.domain_info(info_type="list")
+        parsed = json.loads(raw)
+        assert "error" in parsed
+
+    @patch("main.bloodhound_api")
+    def test_all_tools_return_json_strings(self, api):
+        """Every composite tool must return a JSON string, never a dict."""
+        api.domains.get_all.return_value = []
+        api.users.get_info.return_value = {}
+        api.groups.get_info.return_value = {}
+        api.computers.get_info.return_value = {}
+        api.ous.get_info.return_value = {}
+        api.gpos.get_info.return_value = {}
+        api.graph.search.return_value = []
+        api.adcs.get_cert_template_info.return_value = {}
+        api.cypher.list_saved_queries.return_value = []
+        api.data_quality.get_completeness_stats.return_value = {}
+        api.custom_nodes.get_all_custom_nodes.return_value = []
+        api.asset_groups.list_asset_groups.return_value = []
+
+        calls = [
+            main.domain_info(info_type="list"),
+            main.user_info(USER_ID, info_type="info"),
+            main.group_info(GROUP_ID, info_type="info"),
+            main.computer_info(COMPUTER_ID, info_type="info"),
+            main.ou_info(OU_ID, info_type="info"),
+            main.gpo_info(GPO_ID, info_type="info"),
+            main.graph_analysis(info_type="search", query="test"),
+            main.adcs_info(TEMPLATE_ID, info_type="cert_template_info"),
+            main.cypher_query(info_type="list_saved"),
+            main.data_quality(info_type="completeness"),
+            main.custom_nodes(info_type="list"),
+            main.asset_groups(info_type="list"),
+        ]
+        for r in calls:
+            assert isinstance(r, str), f"Tool returned {type(r)}, expected str"
+            json.loads(r)  # must be valid JSON
