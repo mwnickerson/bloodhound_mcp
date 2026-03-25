@@ -1,114 +1,106 @@
-# BloodHound Model Context Protocol Server
+# BloodHound MCP
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-A Model Context Protocol (MCP) server that enables Large Language Models to interact with BloodHound Community Edition data through Claude Desktop. This tool allows security professionals to query and analyze Active Directory attack paths using natural language. This is currently in the state where it works with Claude Desktop by default.
-
-## Architecture
-
-This MCP server provides a comprehensive interface to **BloodHound Community Edition's REST API**, not just a wrapper around Cypher queries. The implementation includes:
-
-### API Coverage
-- **BloodHound REST API Integration**: Utilizes BloodHound CE's REST API endpoints (`/api/v2/domains`, `/api/v2/users`, `/api/v2/groups`, etc.) most relevant to an operators use case. The management apis have been left out as i still dont feel comfortable giving an LLM access to management of BloodHound
-- **Structured Data Access**: Leverages purpose-built API endpoints for users, computers, groups, OUs, and GPOs
-- **Advanced Functionality**: Includes ADCS analysis, graph search, shortest path algorithms, and edge composition analysis
-- **Authentication**: Implements BloodHound's signature-based authentication system
-
-### Why Not Just Cypher Queries?
-While Cypher queries are powerful, this MCP goes beyond simple query execution:
-
-- **Structured API Responses**: Returns properly formatted, paginated data with counts and metadata
-- **Built-in Relationships**: Utilizes BloodHound's pre-computed relationship mappings
-- **Error Handling**: Proper HTTP status code handling and meaningful error messages
-- **Performance**: Leverages BloodHound's optimized endpoints rather than raw graph traversal
-- **Completeness**: Access to administrative rights, sessions, group memberships, and other complex relationships through dedicated endpoints
-
-### MCP Benefits
-As a proper Model Context Protocol implementation:
-- **Tool Discoverability**: LLM automatically discovers available analysis capabilities
-- **Type Safety**: Strongly typed parameters and responses
-- **Contextual Help**: Built-in documentation and examples for the LLM
-- **Resource Access**: Provides Cypher query examples and patterns as MCP resources
+A Model Context Protocol (MCP) server that connects LLMs to BloodHound Community Edition. Ask questions in natural language, get attack path analysis, run Cypher queries, and explore Active Directory, Azure/Entra ID, and OpenGraph environments — all from your AI assistant.
 
 ## Demo
 
-[Watch the demonstration video](https://youtu.be/eZBT0Iw9CMA) - Outdated will update with a new one at some point
+[Watch the demonstration video](https://youtu.be/eZBT0Iw9CMA) *(updated demo coming soon)*
 
-## Features
+---
 
-### Core Capabilities
-- **Domain Analysis**: Query domain information, users, groups, computers, and organizational structure
-- **User Intelligence**: Analyze user privileges, group memberships, sessions, and administrative rights
-- **Group Analysis**: Examine group memberships, controllers, and privilege relationships
-- **Computer Assessment**: Investigate computer privileges, sessions, and administrative access
-- **Organizational Units**: Explore OU structure and contained objects
-- **Group Policy Objects**: Analyze GPO assignments and controllers
-- **Certificate Services**: Investigate ADCS infrastructure and certificate templates
-- **Custom Cypher Queries**: Execute advanced Neo4j queries for complex analysis
-- **Graph Search**: Find shortest paths between security principals
-- **Asset Grouping**: Group assets together (Tier Zero, Owned, custom groupings)
-- **Data Quality**: Get more information on the data quality in BloodHound
-- **OpenGraph Support**: CRUD Operations on Custom Nodes to support the newest version of BloodHound!
-    - *Requires* BloodHound 8.0 or greater 
-    - This is just implemented and has not been througohly tested
+## How It Works
 
-### Advanced Features
-- Natural language querying of BloodHound data
-- Attack path visualization and analysis
-- Privilege escalation identification
-- Cross-domain relationship analysis
-- Kerberoasting target identification
-- Administrative relationship mapping
+The server exposes BloodHound CE's REST API and Neo4j graph through a set of **11 composite MCP tools**, **10 reference resources**, and a **system prompt** tuned for offensive security analysis.
 
-### OpenGraph Usage
-OpenGraph is a new feature to BloodHound 8.0. It gives users the power to expand BloodHound beyond standard AD and Azure AD.
-For more information on OpenGraph please see the below resources
- - [Awesome Blogpost on the new feature](https://specterops.io/blog/2025/07/29/bloodhound-v8-usability-extensibility-and-opengraph/)
- - [Documentation](https://bloodhound.specterops.io/opengraph/overview)
+### Composite Tools
+
+Each tool uses an `info_type` parameter to select what data is returned, keeping the tool surface small and token-efficient:
+
+| Tool | `info_type` Options |
+|------|---------------------|
+| `domain_info` | `list`, `info`, `users`, `groups`, `computers`, `ous`, `gpos`, `dc_syncers`, `foreign_admins`, `foreign_group_members`, `linked_gpos`, `search` |
+| `user_info` | `info`, `sessions`, `memberships`, `admin_rights`, `rdp_rights`, `dcom_rights`, `ps_remote_rights`, `sql_admin_rights`, `constrained_delegation`, `controllables`, `controllers` |
+| `group_info` | `info`, `members`, `memberships`, `admin_rights`, `rdp_rights`, `dcom_rights`, `ps_remote_rights`, `controllers`, `controllables` |
+| `computer_info` | `info`, `sessions`, `local_admins`, `rdp_rights`, `dcom_rights`, `ps_remote_rights`, `sql_admins`, `constrained_delegation`, `controllables`, `controllers` |
+| `ou_info` | `info`, `users`, `groups`, `computers`, `gpos` |
+| `gpo_info` | `info`, `controllers` |
+| `graph_analysis` | `shortest_path`, `edge_composition`, `search` |
+| `adcs_info` | `templates`, `esc_paths` |
+| `cypher_query` | `run`, `saved_list`, `saved_get` |
+| `data_quality` | `stats`, `platform_list`, `platform_info` |
+| `asset_groups` | `list`, `members`, `custom_selectors` |
+| `custom_nodes` | `list`, `get`, `create`, `update`, `delete` |
+
+### Resources
+
+Reference material the LLM loads on demand — no extra API calls:
+
+| Resource URI | Contents |
+|---|---|
+| `bloodhound://cypher/reference` | Cypher syntax, schema, property names, patterns |
+| `bloodhound://cypher/offensive-queries` | Battle-tested templates: DCSync, Kerberoasting, GPO abuse, delegation, ADCS, shadow credentials, NTLM relay, and more |
+| `bloodhound://guides/ad` | AD node types and relationships quick reference |
+| `bloodhound://guides/ad-methodology` | Full AD attack methodology and workflow |
+| `bloodhound://guides/azure` | Azure/Entra ID analysis quick reference |
+| `bloodhound://guides/azure-methodology` | Full Azure attack chains |
+| `bloodhound://guides/adcs` | ADCS ESC1–ESC13 quick reference |
+| `bloodhound://guides/adcs-methodology` | Detailed ESC analysis and exploitation |
+| `bloodhound://opengraph/guide` | Custom node schema design and best practices |
+| `bloodhound://opengraph/examples` | SQL Server and Web App OpenGraph examples |
+
+### System Prompt
+
+The `bloodhound_assistant` prompt includes behavioral rules that guide the LLM:
+
+- Load the offensive query library before writing Cypher for any attack scenario
+- Never draw privilege conclusions without checking group memberships and `admincount`
+- Respect BloodHound's property naming conventions (`hasspn`, `enabled`, `admincount` — all lowercase)
+- Handle uppercase name storage (`DOMAIN ADMINS@CORP.LOCAL`) correctly in filters
+- Follow proper DCSync and GPO edge traversal patterns
+
+---
 
 ## Prerequisites
 
-- **Python 3.11+**
-- **uv** (Python package manager)
-- **Claude Desktop**
-- **BloodHound Community Edition** instance (accessible via network)
-- **BloodHound data** loaded (from SharpHound, BloodHound.py, etc.)
-- **BloodHound API credentials** (Token ID and Token Key)
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/)
+- BloodHound Community Edition instance with data loaded
+- BloodHound API credentials (Token ID + Token Key)
+
+---
 
 ## Installation
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd bloodhound-mcp
-   ```
+```bash
+git clone https://github.com/mwnickerson/bloodhound_mcp.git
+cd bloodhound-mcp
+uv sync
+```
 
-2. **Install dependencies**
-   ```bash
-   uv sync
-   ```
+Create a `.env` file in the project root:
 
-3. **Configure environment variables**
-   
-   Create a `.env` file in the project root:
-   ```env
-   BLOODHOUND_DOMAIN=your-bloodhound-instance.domain.com
-   BLOODHOUND_TOKEN_ID=your-token-id
-   BLOODHOUND_TOKEN_KEY=your-token-key
-   ```
+```env
+BLOODHOUND_DOMAIN=your-bloodhound-instance.domain.com
+BLOODHOUND_TOKEN_ID=your-token-id
+BLOODHOUND_TOKEN_KEY=your-token-key
+```
 
-   **Note:** By default, the server connects using `https` on port `443`. If you're using BloodHound Community Edition with a different configuration, add these optional variables:
-   ```env
-   BLOODHOUND_PORT=8080
-   BLOODHOUND_SCHEME=http
-   ```
+The server defaults to `https` on port `443`. Override if needed:
+
+```env
+BLOODHOUND_PORT=8080
+BLOODHOUND_SCHEME=http
+```
+
+---
 
 ## Configuration
 
-### Claude Desktop Setup
+### Claude Desktop
 
-1. Open Claude Desktop and navigate to **Settings** → **Developer Tools**
-2. Add the following configuration to your `claude_desktop_config.json`:
+Add to `claude_desktop_config.json`:
 
 ```json
 {
@@ -117,7 +109,7 @@ For more information on OpenGraph please see the below resources
       "command": "uv",
       "args": [
         "--directory",
-        "/path/to/your/bloodhound-mcp",
+        "/path/to/bloodhound-mcp",
         "run",
         "main.py"
       ]
@@ -126,126 +118,147 @@ For more information on OpenGraph please see the below resources
 }
 ```
 
-3. Replace `/path/to/your/bloodhound-mcp` with the actual path to your installation
-4. Restart Claude Desktop
+### Claude Code
 
-### BloodHound API Token Setup
+Add to `~/.claude/mcp.json`:
 
-1. Log into your BloodHound CE instance
+```json
+{
+  "mcpServers": {
+    "bloodhound_mcp": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/bloodhound-mcp",
+        "run",
+        "main.py"
+      ]
+    }
+  }
+}
+```
+
+### MCP Inspector
+
+- **Command:** `uv`
+- **Args:** `--directory /path/to/bloodhound-mcp run main.py`
+
+### BloodHound API Token
+
+1. Log into BloodHound CE
 2. Navigate to **Administration** → **API Tokens**
-3. Create a new token with appropriate permissions
-4. Note the Token ID and Token Key for your `.env` file
+3. Create a new token and copy the Token ID and Token Key into your `.env`
+
+---
 
 ## Usage
 
-### Getting Started
-
-1. Start a new conversation in Claude Desktop
-2. Look for the hammer icon (🔨) indicating MCP tools are available
-3. Begin by asking about your domains:
-
-```
-What domains are available in BloodHound?
-```
-
 ### Example Queries
 
-**Domain Reconnaissance:**
+**Reconnaissance:**
 ```
-Show me all users in the DOMAIN.LOCAL domain
-What computers are in the domain?
-Find all Domain Admins
-```
-
-**User Analysis:**
-```
-What administrative rights does john.doe@domain.local have?
-Show me all sessions for the user administrator
-What groups is this user a member of?
-```
-
-**Privilege Escalation:**
-```
+What domains are in BloodHound?
+Show me all Domain Admins in CORP.LOCAL
 Find all kerberoastable users
-Show me users with DCSync privileges
-What computers can I RDP to from this user?
+Which computers have unconstrained delegation?
 ```
 
-**Advanced Analysis:**
+**User and Group Analysis:**
 ```
-Run a cypher query to find all paths to Domain Admin
-Show me the shortest path from user A to user B
-Find all users with SPN set
+What admin rights does jsmith@corp.local have?
+Show me all sessions for the administrator account
+What groups is this user a member of?
+Who controls the IT ADMINS group?
 ```
+
+**Attack Path Analysis:**
+```
+Find the shortest path from jsmith@corp.local to Domain Admins
+Who has DCSync rights in the domain?
+Show me all GPO abuse paths
+Find ADCS ESC1 paths in the domain
+```
+
+**Custom Cypher:**
+```
+Run a Cypher query to find all users with SPN set and admincount=1
+Find all computers where DOMAIN USERS can RDP
+```
+
+---
+
+## OpenGraph Support
+
+BloodHound 8.0+ supports custom node types via OpenGraph, letting you model non-AD infrastructure (cloud resources, databases, custom assets) in the same graph as Active Directory.
+
+The `custom_nodes` tool handles CRUD operations on node type configurations. Use the `bloodhound://opengraph/guide` and `bloodhound://opengraph/examples` resources for schema design and Cypher patterns.
+
+> Requires BloodHound CE 8.0 or later.
+
+---
 
 ## Security Considerations
 
-### Data Sensitivity Warning
-This tool processes BloodHound data through Claude Desktop, which means Active Directory information is transmitted to Anthropic's servers. **Do not use this tool with production or sensitive BloodHound data.**
+BloodHound data processed through this tool is transmitted to your LLM provider's servers. **Do not use this with production AD data unless you have assessed that risk.**
 
-### Recommended Use Cases
-- **Training environments** (GOAD, DetectionLab, etc.)
-- **Demonstration purposes**
-- **Learning and research**
-- **Non-production domain analysis**
+Recommended use cases:
+- Lab environments (GOAD, DetectionLab, custom ranges)
+- Training and certification prep
+- Research and tool development
+- Non-production domain analysis
 
-### Best Practices
-- Use isolated lab environments
-- Sanitize data before analysis
-- Consider local LLM alternatives for sensitive environments
-  - there are projects coming out that allow for the connecting of MCPs to local llms
-- Regular token rotation for BloodHound API access
+Best practices:
+- Rotate BloodHound API tokens regularly
+- Use a read-only API token where possible
+- Consider a local LLM bridge for sensitive environments
 
-# A note on Local LLM Support
-Initially I was planning to allow for this to connect to Local LLMs, however during this process the research and testing has led me in another direction. This direction requires a lot more time and energy that takes away from building a connector for Ollama or other Local LLM support. There are a lot of projects coming out (that I have not tested with this) that can serve as a bridge. Therefore I do not plan on directly making this project work with local LLMs for the time being (this may be something i explore in the future). Hopefully the next evolution of this project will be seen as a worthwhile investment of my time and energy!
+---
 
 ## Testing
 
-Run the test suite to verify functionality:
-
 ```bash
-# Basic functionality tests
-uv run pytest tests/test_basics.py -v
+# Full test suite (307 tests)
+uv run pytest
 
-# HTTP request testing
-uv run pytest tests/test_bloodhound_http.py -v
+# Specific modules
+uv run pytest tests/test_main_mcp_tools.py -v
+uv run pytest tests/test_bloodhound_api.py -v
 
-# MCP tools testing
-uv run pytest tests/test_mcp_tools.py -v
-
-# Integration tests (requires running BloodHound instance)
+# Integration tests (requires a live BloodHound instance)
 BLOODHOUND_INTEGRATION_TESTS=1 uv run pytest tests/test_integration.py -v
 ```
 
-## Contributing
-
-Contributions are welcome! This project is designed for learning and experimentation with MCPs and BloodHound APIs.
-
-### Development Setup
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Run the test suite
-6. Submit a pull request
+---
 
 ## Roadmap
 
-- [ ] Enhanced attack path analysis
-- [ ] Azure Active Directory support
-- [ ] Advanced graph visualizations
-- [ ] Asset management integration
-- [ ] Local LLM compatibility
-- [ ] Additional ADCS attack scenarios
+- [ ] Direct Neo4j access mode (bypass REST API for complex graph traversal)
+- [ ] Enhanced Azure/Entra ID tooling
+- [ ] Improved ADCS attack path coverage
+- [ ] Additional OpenGraph examples and templates
 
-## License
+---
 
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+## Contributing
+
+Contributions are welcome. Open an issue to discuss significant changes before submitting a PR.
+
+1. Fork the repo
+2. Create a feature branch
+3. Add tests for new functionality
+4. Run `uv run pytest` and confirm everything passes
+5. Submit a pull request
+
+---
 
 ## Acknowledgments
 
+- **SpecterOps** for [BloodHound Community Edition](https://github.com/SpecterOps/BloodHound)
 - **Orange Cyberdefense** for [GOAD](https://github.com/Orange-Cyberdefense/GOAD) (used for testing)
-- **SpecterOps** for BloodHound Community Edition
 - **@jlowin** for [FastMCP](https://github.com/jlowin/fastmcp)
-- **@xpn** for MCP inspiration through the Mythic MCP project
+- **@xpn** for MCP inspiration via the Mythic MCP project
 
+## License
+
+GNU General Public License v3.0 — see [LICENSE](LICENSE) for details.
