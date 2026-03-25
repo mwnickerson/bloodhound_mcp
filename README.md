@@ -139,6 +139,29 @@ Add to `~/.claude/mcp.json`:
 }
 ```
 
+### OpenAI Codex CLI
+
+Add to `~/.codex/config.toml` (or `.codex/config.toml` for project-scoped config):
+
+```toml
+[mcp_servers.bloodhound_mcp]
+command = "uv"
+args = ["--directory", "/path/to/bloodhound-mcp", "run", "main.py"]
+```
+
+Since the server loads credentials from `.env` automatically, no `env` block is needed. If you prefer to pass them explicitly:
+
+```toml
+[mcp_servers.bloodhound_mcp]
+command = "uv"
+args = ["--directory", "/path/to/bloodhound-mcp", "run", "main.py"]
+
+[mcp_servers.bloodhound_mcp.env]
+BLOODHOUND_DOMAIN = "your-bloodhound-instance.domain.com"
+BLOODHOUND_TOKEN_ID = "your-token-id"
+BLOODHOUND_TOKEN_KEY = "your-token-key"
+```
+
 ### MCP Inspector
 
 - **Command:** `uv`
