@@ -1857,3 +1857,151 @@ class TestIntegration:
                 actual_signature = kwargs['headers']['Signature']
                 
                 assert actual_signature == expected_signature
+
+class TestRawRequest:
+    """Tests for BloodhoundBaseClient.raw_request()"""
+
+    def setup_method(self):
+        self.client = BloodhoundBaseClient(
+            domain="test.bloodhound.local",
+            token_id="test-token-id",
+            token_key="test-token-key-32-chars-minimum!!",
+        )
+
+    def test_raw_request_returns_response(self):
+        with patch("requests.request") as mock_req:
+            mock_response = Mock()
+            mock_response.status_code = 202
+            mock_req.return_value = mock_response
+            result = self.client.raw_request("POST", "/api/v2/file-upload/1", body=b"data")
+            assert result is mock_response
+
+    def test_raw_request_sends_custom_content_type(self):
+        with patch("requests.request") as mock_req:
+            mock_response = Mock()
+            mock_response.status_code = 202
+            mock_req.return_value = mock_response
+            self.client.raw_request(
+                "POST", "/api/v2/file-upload/1",
+                body=b"zipdata", content_type="application/zip"
+            )
+            _, kwargs = mock_req.call_args
+            assert kwargs["headers"]["Content-Type"] == "application/zip"
+
+    def test_raw_request_default_content_type_is_json(self):
+        with patch("requests.request") as mock_req:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_req.return_value = mock_response
+            self.client.raw_request("GET", "/api/v2/some-endpoint")
+            _, kwargs = mock_req.call_args
+            assert kwargs["headers"]["Content-Type"] == "application/json"
+
+    def test_raw_request_raises_on_http_error(self):
+        with patch("requests.request") as mock_req:
+            mock_response = Mock()
+            mock_response.status_code = 400
+            mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+                "400 Bad Request"
+            )
+            mock_response.json.side_effect = Exception("no json")
+            mock_req.return_value = mock_response
+            with pytest.raises(BloodhoundAPIError) as exc_info:
+                self.client.raw_request("POST", "/api/v2/file-upload/1", body=b"bad")
+            assert exc_info.value.status_code == 400
+
+    def test_raw_request_appends_query_params(self):
+        with patch("requests.request") as mock_req:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_req.return_value = mock_response
+            self.client.raw_request("GET", "/api/v2/test", params={"foo": "bar"})
+            _, kwargs = mock_req.call_args
+            assert "foo=bar" in kwargs["url"]
+
+
+class TestFileUploadClient:
+    """Tests for FileUploadClient"""
+
+    def setup_method(self):
+        from lib.bloodhound_api import FileUploadClient
+        self.mock_base = MagicMock()
+        self.client = FileUploadClient(self.mock_base)
+
+    def test_start_upload_returns_job_id(self):
+        self.mock_base.request.return_value = {"data": {"id": 42}}
+        result = self.client.start_upload()
+        assert result == 42
+        self.mock_base.request.assert_called_once_with("POST", "/api/v2/file-upload/start")
+
+    def test_upload_file_zip(self):
+        self.client.upload_file(42, b"zipdata", "application/zip")
+        self.mock_base.raw_request.assert_called_once_with(
+            "POST", "/api/v2/file-upload/42",
+            body=b"zipdata", content_type="application/zip"
+        )
+
+    def test_upload_file_json(self):
+        self.client.upload_file(7, b"{}", "application/json")
+        self.mock_base.raw_request.assert_called_once_with(
+            "POST", "/api/v2/file-upload/7",
+            body=b"{}", content_type="application/json"
+        )
+
+    def test_end_upload(self):
+        self.client.end_upload(42)
+        self.mock_base.request.assert_called_once_with(
+            "POST", "/api/v2/file-upload/42/end"
+        )
+
+    def test_upload_collection_file_zip(self, tmp_path):
+        zip_file = tmp_path / "sharphound.zip"
+        zip_file.write_bytes(b"PK\x03\x04fakezip")
+        self.mock_base.request.return_value = {"data": {"id": 99}}
+
+        result = self.client.upload_collection_file(str(zip_file))
+
+        assert result["job_id"] == 99
+        assert result["file_name"] == "sharphound.zip"
+        assert result["content_type"] == "application/zip"
+        assert result["status"] == "upload_complete"
+        assert self.mock_base.request.call_count == 2  # start + end
+        assert self.mock_base.raw_request.call_count == 1  # upload
+
+    def test_upload_collection_file_json(self, tmp_path):
+        json_file = tmp_path / "users.json"
+        json_file.write_bytes(b'{"data":[]}')
+        self.mock_base.request.return_value = {"data": {"id": 7}}
+
+        result = self.client.upload_collection_file(str(json_file))
+
+        assert result["content_type"] == "application/json"
+        assert result["status"] == "upload_complete"
+
+    def test_validate_file_not_found(self):
+        with pytest.raises(FileNotFoundError):
+            self.client._validate_file(__import__("pathlib").Path("/nonexistent/file.zip"))
+
+    def test_validate_file_wrong_extension(self, tmp_path):
+        bad_file = tmp_path / "data.txt"
+        bad_file.write_bytes(b"data")
+        with pytest.raises(ValueError, match="Invalid file type"):
+            self.client._validate_file(bad_file)
+
+    def test_validate_file_empty(self, tmp_path):
+        empty = tmp_path / "empty.zip"
+        empty.write_bytes(b"")
+        with pytest.raises(ValueError, match="empty"):
+            self.client._validate_file(empty)
+
+    def test_validate_file_too_large(self, tmp_path):
+        from lib.bloodhound_api import FileUploadClient
+        big_file = tmp_path / "big.zip"
+        big_file.write_bytes(b"x")
+        original = FileUploadClient.MAX_FILE_SIZE
+        FileUploadClient.MAX_FILE_SIZE = 0
+        try:
+            with pytest.raises(ValueError, match="500 MB"):
+                self.client._validate_file(big_file)
+        finally:
+            FileUploadClient.MAX_FILE_SIZE = original

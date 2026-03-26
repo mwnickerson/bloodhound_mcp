@@ -93,7 +93,11 @@ class BloodhoundBaseClient:
         return f"{self.scheme}://{self.domain}:{self.port}/{formatted_uri}"
 
     def _request(
-        self, method: str, uri: str, body: Optional[bytes] = None
+        self,
+        method: str,
+        uri: str,
+        body: Optional[bytes] = None,
+        content_type: str = "application/json",
     ) -> requests.Response:
         """
         Make a signed request to the BloodHound API
@@ -102,6 +106,7 @@ class BloodhoundBaseClient:
             method: HTTP method (GET, POST, etc.)
             uri: Request URI
             body: Optional request body
+            content_type: Content-Type header value (default: application/json)
 
         Returns:
             Response from the API
@@ -136,7 +141,7 @@ class BloodhoundBaseClient:
                     "Authorization": f"bhesignature {self.token_id}",
                     "RequestDate": datetime_formatted,
                     "Signature": base64.b64encode(digester.digest()),
-                    "Content-Type": "application/json",
+                    "Content-Type": content_type,
                 },
                 data=body,
             )
@@ -184,11 +189,126 @@ class BloodhoundBaseClient:
                 error_data = response.json()
                 if "error" in error_data:
                     error_msg = f"{error_msg} - {error_data['error']}"
-            except:
+            except Exception:
                 pass
             raise BloodhoundAPIError(error_msg, response=response)
         except json.JSONDecodeError:
             raise BloodhoundAPIError("Invalid JSON response", response=response)
+
+    def raw_request(
+        self,
+        method: str,
+        uri: str,
+        body: Optional[bytes] = None,
+        content_type: str = "application/json",
+        params: Optional[Dict[str, Any]] = None,
+    ) -> requests.Response:
+        """
+        Make a raw API request, returning the response without JSON decoding.
+        Used for file uploads where the body is raw bytes and the response may be empty.
+
+        Args:
+            method: HTTP method (GET, POST, etc.)
+            uri: Request URI
+            body: Optional raw request body bytes
+            content_type: Content-Type header value
+            params: Optional query parameters
+
+        Returns:
+            Raw requests.Response object
+        """
+        if params:
+            uri = f"{uri}?{urlencode(params)}"
+
+        response = self._request(method, uri, body, content_type=content_type)
+
+        try:
+            response.raise_for_status()
+            return response
+        except requests.exceptions.HTTPError as e:
+            error_msg = f"HTTP Error: {e}"
+            try:
+                error_data = response.json()
+                if "error" in error_data:
+                    error_msg = f"{error_msg} - {error_data['error']}"
+            except Exception:
+                pass
+            raise BloodhoundAPIError(error_msg, response=response)
+
+
+class FileUploadClient:
+    """Client for uploading SharpHound/AzureHound collection files to BloodHound CE."""
+
+    MAX_FILE_SIZE = 500 * 1024 * 1024  # 500 MB
+    VALID_EXTENSIONS = {".zip", ".json"}
+
+    def __init__(self, base_client: BloodhoundBaseClient):
+        self.base_client = base_client
+
+    def _validate_file(self, path: Path) -> None:
+        if not path.exists():
+            raise FileNotFoundError(f"File not found: {path}")
+        if not path.is_file():
+            raise ValueError(f"Not a file: {path}")
+        if path.suffix.lower() not in self.VALID_EXTENSIONS:
+            raise ValueError(
+                f"Invalid file type '{path.suffix}'. Must be .zip or .json"
+            )
+        size = path.stat().st_size
+        if size == 0:
+            raise ValueError(f"File is empty: {path}")
+        if size > self.MAX_FILE_SIZE:
+            raise ValueError(
+                f"File exceeds 500 MB limit: {size} bytes"
+            )
+
+    def start_upload(self) -> int:
+        """Start a new upload job. Returns the job ID."""
+        response = self.base_client.request("POST", "/api/v2/file-upload/start")
+        return response["data"]["id"]
+
+    def upload_file(self, job_id: int, file_data: bytes, content_type: str) -> None:
+        """Upload raw file bytes to an existing upload job."""
+        self.base_client.raw_request(
+            "POST",
+            f"/api/v2/file-upload/{job_id}",
+            body=file_data,
+            content_type=content_type,
+        )
+
+    def end_upload(self, job_id: int) -> None:
+        """Finalize an upload job and trigger ingest processing."""
+        self.base_client.request("POST", f"/api/v2/file-upload/{job_id}/end")
+
+    def upload_collection_file(self, file_path: str) -> Dict[str, Any]:
+        """
+        Full upload workflow for a single collection file: start -> upload -> end.
+
+        Args:
+            file_path: Absolute path to a SharpHound/AzureHound .zip or .json file
+
+        Returns:
+            Dict with job_id, file_name, file_size_bytes, content_type, status
+        """
+        path = Path(file_path)
+        self._validate_file(path)
+
+        content_type = (
+            "application/zip" if path.suffix.lower() == ".zip" else "application/json"
+        )
+        file_data = path.read_bytes()
+
+        job_id = self.start_upload()
+        self.upload_file(job_id, file_data, content_type)
+        self.end_upload(job_id)
+
+        return {
+            "job_id": job_id,
+            "file_name": path.name,
+            "file_size_bytes": len(file_data),
+            "content_type": content_type,
+            "status": "upload_complete",
+        }
 
 
 class BloodhoundAPI:
@@ -236,6 +356,7 @@ class BloodhoundAPI:
         self.data_quality = DataQualityClient(self.base_client)
         self.custom_nodes = CustomNodesClient(self.base_client)
         self.asset_groups = AssetGroupsClient(self.base_client)
+        self.file_upload = FileUploadClient(self.base_client)
 
     def test_connection(self) -> Dict[str, Any]:
         """

@@ -8,6 +8,7 @@ Trying to be more token iffecient
 
 import json
 import logging
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -78,8 +79,9 @@ def bloodhound_assistant() -> str:
     2. Use composite tools to drill into specific objects or request all information about the object
     3. Use cypher_query(info_type="run") for advanced cross-domain analysis
     4. Use custom_nodes to manage OpenGraph node type configurations
-    5. For Azure: prefer Cypher queries over REST API tools
-    6. For OpenGraph: prompt the user for OpenGraph schema and example queries, then use these to create Cypher queries
+    5. Use file_upload(info_type="upload", file_path="...") to ingest SharpHound/AzureHound collection data (.zip or .json)
+    6. For Azure: prefer Cypher queries over REST API tools
+    7. For OpenGraph: prompt the user for OpenGraph schema and example queries, then use these to create Cypher queries
 
     ## Behavioral Rules — Follow These Before Writing Cypher
     1. Before writing custom Cypher for any offensive scenario (DCSync, GPO abuse, delegation,
@@ -945,6 +947,56 @@ def asset_groups(
         ),
         "tag_members": lambda: bloodhound_api.asset_groups.list_asset_group_tag_members(
             asset_group_tag_id, skip=skip, limit=limit
+        ),
+    }
+    return _handle_tool_call(info_type, handlers)
+
+
+def _upload_to_job(job_id: int, file_path: str) -> dict:
+    """Helper for multi-file upload: validate, detect content type, upload to existing job."""
+    path = Path(file_path)
+    bloodhound_api.file_upload._validate_file(path)
+    content_type = (
+        "application/zip" if path.suffix.lower() == ".zip" else "application/json"
+    )
+    file_data = path.read_bytes()
+    bloodhound_api.file_upload.upload_file(job_id, file_data, content_type)
+    return {
+        "job_id": job_id,
+        "file_name": path.name,
+        "file_size_bytes": len(file_data),
+        "status": "uploaded",
+    }
+
+
+@mcp.tool()
+def file_upload(
+    info_type: str = "upload",
+    file_path: str = None,
+    job_id: int = None,
+) -> str:
+    """Upload SharpHound/AzureHound collection files to BloodHound CE for ingest.
+    Accepts .zip (SharpHound ZIP archive) or .json (individual collection file).
+
+    info_type options:
+        upload        - full workflow for a single file: start -> upload -> end
+                        (requires: file_path)
+        start_job     - start a new upload job, returns job_id for multi-file uploads
+        upload_to_job - upload a file to an existing job (requires: job_id, file_path)
+        end_job       - finalize an upload job and trigger ingest (requires: job_id)
+
+    Args:
+        info_type: operation to perform (default: upload)
+        file_path: absolute path to collection file (.zip or .json)
+        job_id: upload job ID (required for upload_to_job and end_job)
+    """
+    handlers = {
+        "upload": lambda: bloodhound_api.file_upload.upload_collection_file(file_path),
+        "start_job": lambda: {"job_id": bloodhound_api.file_upload.start_upload()},
+        "upload_to_job": lambda: _upload_to_job(job_id, file_path),
+        "end_job": lambda: (
+            bloodhound_api.file_upload.end_upload(job_id)
+            or {"status": "ingest_started", "job_id": job_id}
         ),
     }
     return _handle_tool_call(info_type, handlers)
