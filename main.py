@@ -8,6 +8,7 @@ Trying to be more token iffecient
 
 import json
 import logging
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -28,6 +29,12 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+AGGREGATION_FUNCTIONS = ("COUNT", "COLLECT", "SUM", "AVG", "MIN", "MAX")
+AGGREGATION_PATTERN = re.compile(
+    r"\b(" + "|".join(AGGREGATION_FUNCTIONS) + r")\s*\(",
+    re.IGNORECASE,
+)
 
 # Load environment variables
 load_dotenv()
@@ -102,6 +109,9 @@ def bloodhound_assistant() -> str:
     8. GPO abuse requires the full chain: principal -> write edge -> GPO -> GPLink -> OU -> Contains -> targets.
        Never skip intermediate nodes — the GPLink edge goes FROM the GPO TO the container.
     9. Load bloodhound://cypher/reference when in doubt about schema, property names, or syntax.
+    10. COUNT, COLLECT, SUM, AVG, MIN, and MAX are API-safe but not BloodHound GUI-safe.
+        Use them with cypher_query(info_type="run") when you need aggregation. When giving the
+        user a query to paste into the GUI, return individual nodes, edges, or paths instead.
 
     ## Resources
     Quick reference (load as needed):
@@ -679,9 +689,12 @@ def _cypher_run(query: str, include_properties: bool = True) -> str:
     """Execute a Cypher query with proper HTTP Status interpretation"""
     try:
         result = bloodhound_api.cypher.run_query(query, include_properties)
+        compatibility = _cypher_query_compatibility(query)
         # handle metadat enriched resposne formmat
         if isinstance(result, dict) and "metadata" in result:
-            has_results = result["metadata"].get("has_result", True)
+            has_results = result["metadata"].get(
+                "has_results", result["metadata"].get("has_result", True)
+            )
             result_data = result.get("data", result)
         else:
             result_data = result
@@ -691,6 +704,7 @@ def _cypher_run(query: str, include_properties: bool = True) -> str:
                 "info_type": "run",
                 "success": True,
                 "has_results": has_results,
+                "query_compatibility": compatibility,
                 "data": result_data,
                 "node_count": len(result_data.get("nodes", [])),
                 "edge_count": len(result_data.get("edges", [])),
@@ -725,6 +739,33 @@ def _cypher_run(query: str, include_properties: bool = True) -> str:
                 {"success": False, "error_type": "server_error", "error": str(e)}
             )
         return json.dumps({"success": False, "error": str(e)})
+
+
+def _cypher_query_compatibility(query: str) -> dict:
+    """Describe whether a Cypher query is safe to run in the BloodHound GUI."""
+    aggregation_functions = sorted(
+        {match.group(1).upper() for match in AGGREGATION_PATTERN.finditer(query or "")}
+    )
+    if not aggregation_functions:
+        return {
+            "api_safe": True,
+            "gui_safe": True,
+            "uses_aggregation": False,
+        }
+    return {
+        "api_safe": True,
+        "gui_safe": False,
+        "uses_aggregation": True,
+        "aggregation_functions": aggregation_functions,
+        "warning": (
+            "Aggregation queries are supported through cypher_query but BloodHound's "
+            "GUI may not render them correctly."
+        ),
+        "gui_safe_guidance": (
+            "For GUI use, return individual nodes, edges, or paths instead of "
+            "COUNT/COLLECT/SUM/AVG/MIN/MAX aggregates."
+        ),
+    }
 
 
 # Note: this function may be redundant — needs A/B testing to confirm it adds value vs just extra steps

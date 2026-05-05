@@ -278,7 +278,7 @@ class FileUploadClient:
 
     def end_upload(self, job_id: int) -> None:
         """Finalize an upload job and trigger ingest processing."""
-        self.base_client.request("POST", f"/api/v2/file-upload/{job_id}/end")
+        self.base_client.raw_request("POST", f"/api/v2/file-upload/{job_id}/end")
 
     def upload_collection_file(self, file_path: str) -> Dict[str, Any]:
         """
@@ -1998,12 +1998,20 @@ class CypherClient:
         Returns:
             Dictionary with validation results
         """
+        upper_query = query.upper()
+        aggregation_functions = [
+            function
+            for function in ["COUNT", "COLLECT", "SUM", "AVG", "MIN", "MAX"]
+            if f"{function}(" in upper_query or f"{function} (" in upper_query
+        ]
         basic_checks = {
             "is_empty": not query.strip(),
-            "has_return": "RETURN" in query.upper(),
-            "has_match": "MATCH" in query.upper(),
+            "has_return": "RETURN" in upper_query,
+            "has_match": "MATCH" in upper_query,
+            "has_gui_incompatible_aggregation": bool(aggregation_functions),
+            "aggregation_functions": aggregation_functions,
             "estimated_complexity": "high"
-            if any(keyword in query.upper() for keyword in ["*", "ALL", "COLLECT"])
+            if any(keyword in upper_query for keyword in ["*", "ALL", "COLLECT"])
             else "medium",
         }
 
@@ -2014,6 +2022,13 @@ class CypherClient:
                 "Query appears empty" if basic_checks["is_empty"] else None,
                 "Query may have high complexity"
                 if basic_checks["estimated_complexity"] == "high"
+                else None,
+                (
+                    "COUNT/COLLECT/SUM/AVG/MIN/MAX aggregations are API-safe but "
+                    "may not render correctly in the BloodHound GUI; for GUI use, "
+                    "return individual nodes, edges, or paths."
+                )
+                if basic_checks["has_gui_incompatible_aggregation"]
                 else None,
             ],
         }

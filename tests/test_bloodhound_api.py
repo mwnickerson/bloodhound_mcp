@@ -1586,6 +1586,18 @@ class TestCypherClient:
         assert result["valid"] is True
         assert result["checks"]["estimated_complexity"] == "high"
         assert "Query may have high complexity" in [w for w in result["warnings"] if w]
+        assert result["checks"]["has_gui_incompatible_aggregation"] is True
+        assert "COLLECT" in result["checks"]["aggregation_functions"]
+
+    def test_validate_query_warns_for_gui_incompatible_count(self):
+        """Test validate_query flags COUNT as API-safe but not GUI-safe."""
+        result = self.cypher_client.validate_query("MATCH (n) RETURN count(n) AS total")
+
+        warnings = [w for w in result["warnings"] if w]
+        assert result["valid"] is True
+        assert result["checks"]["has_gui_incompatible_aggregation"] is True
+        assert result["checks"]["aggregation_functions"] == ["COUNT"]
+        assert any("BloodHound GUI" in warning for warning in warnings)
 
     def test_get_saved_query(self):
         """Test get_saved_query method"""
@@ -1950,9 +1962,21 @@ class TestFileUploadClient:
 
     def test_end_upload(self):
         self.client.end_upload(42)
-        self.mock_base.request.assert_called_once_with(
+        self.mock_base.raw_request.assert_called_once_with(
             "POST", "/api/v2/file-upload/42/end"
         )
+
+    def test_end_upload_accepts_empty_success_response(self):
+        """Finalization succeeds when BloodHound returns 2xx with no JSON body."""
+        self.mock_base.raw_request.return_value = None
+
+        result = self.client.end_upload(42)
+
+        assert result is None
+        self.mock_base.raw_request.assert_called_once_with(
+            "POST", "/api/v2/file-upload/42/end"
+        )
+        self.mock_base.request.assert_not_called()
 
     def test_upload_collection_file_zip(self, tmp_path):
         zip_file = tmp_path / "sharphound.zip"
@@ -1965,8 +1989,8 @@ class TestFileUploadClient:
         assert result["file_name"] == "sharphound.zip"
         assert result["content_type"] == "application/zip"
         assert result["status"] == "upload_complete"
-        assert self.mock_base.request.call_count == 2  # start + end
-        assert self.mock_base.raw_request.call_count == 1  # upload
+        assert self.mock_base.request.call_count == 1  # start
+        assert self.mock_base.raw_request.call_count == 2  # upload + end
 
     def test_upload_collection_file_json(self, tmp_path):
         json_file = tmp_path / "users.json"

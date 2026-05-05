@@ -841,6 +841,25 @@ class TestCypherQuery:
         assert result["success"] is True
         assert result["has_results"] is True
 
+    @patch("main.bloodhound_api")
+    def test_run_count_query_marks_gui_incompatible(self, api):
+        api.cypher.run_query.return_value = {
+            "metadata": {"has_results": True},
+            "data": {"columns": ["total"], "rows": [{"total": 42}]},
+        }
+        result = json.loads(
+            main.cypher_query(
+                info_type="run",
+                query="MATCH (n) RETURN count(n) AS total",
+            )
+        )
+
+        assert result["success"] is True
+        assert result["query_compatibility"]["api_safe"] is True
+        assert result["query_compatibility"]["gui_safe"] is False
+        assert result["query_compatibility"]["aggregation_functions"] == ["COUNT"]
+        assert "COUNT" in result["query_compatibility"]["gui_safe_guidance"]
+
     def test_interpret_failed_query(self):
         failed = json.dumps({"success": False, "error": "syntax error"})
         result = json.loads(
