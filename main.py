@@ -8,6 +8,8 @@ Trying to be more token iffecient
 
 import json
 import logging
+import re
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -27,6 +29,12 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+AGGREGATION_FUNCTIONS = ("COUNT", "COLLECT", "SUM", "AVG", "MIN", "MAX")
+AGGREGATION_PATTERN = re.compile(
+    r"\b(" + "|".join(AGGREGATION_FUNCTIONS) + r")\s*\(",
+    re.IGNORECASE,
+)
 
 # Load environment variables
 load_dotenv()
@@ -78,8 +86,9 @@ def bloodhound_assistant() -> str:
     2. Use composite tools to drill into specific objects or request all information about the object
     3. Use cypher_query(info_type="run") for advanced cross-domain analysis
     4. Use custom_nodes to manage OpenGraph node type configurations
-    5. For Azure: prefer Cypher queries over REST API tools
-    6. For OpenGraph: prompt the user for OpenGraph schema and example queries, then use these to create Cypher queries
+    5. Use file_upload(info_type="upload", file_path="...") to ingest SharpHound/AzureHound collection data (.zip or .json)
+    6. For Azure: prefer Cypher queries over REST API tools
+    7. For OpenGraph: prompt the user for OpenGraph schema and example queries, then use these to create Cypher queries
 
     ## Behavioral Rules — Follow These Before Writing Cypher
     1. Before writing custom Cypher for any offensive scenario (DCSync, GPO abuse, delegation,
@@ -100,6 +109,9 @@ def bloodhound_assistant() -> str:
     8. GPO abuse requires the full chain: principal -> write edge -> GPO -> GPLink -> OU -> Contains -> targets.
        Never skip intermediate nodes — the GPLink edge goes FROM the GPO TO the container.
     9. Load bloodhound://cypher/reference when in doubt about schema, property names, or syntax.
+    10. COUNT, COLLECT, SUM, AVG, MIN, and MAX are API-safe but not BloodHound GUI-safe.
+        Use them with cypher_query(info_type="run") when you need aggregation. When giving the
+        user a query to paste into the GUI, return individual nodes, edges, or paths instead.
 
     ## Resources
     Quick reference (load as needed):
@@ -677,9 +689,12 @@ def _cypher_run(query: str, include_properties: bool = True) -> str:
     """Execute a Cypher query with proper HTTP Status interpretation"""
     try:
         result = bloodhound_api.cypher.run_query(query, include_properties)
+        compatibility = _cypher_query_compatibility(query)
         # handle metadat enriched resposne formmat
         if isinstance(result, dict) and "metadata" in result:
-            has_results = result["metadata"].get("has_result", True)
+            has_results = result["metadata"].get(
+                "has_results", result["metadata"].get("has_result", True)
+            )
             result_data = result.get("data", result)
         else:
             result_data = result
@@ -689,6 +704,7 @@ def _cypher_run(query: str, include_properties: bool = True) -> str:
                 "info_type": "run",
                 "success": True,
                 "has_results": has_results,
+                "query_compatibility": compatibility,
                 "data": result_data,
                 "node_count": len(result_data.get("nodes", [])),
                 "edge_count": len(result_data.get("edges", [])),
@@ -723,6 +739,33 @@ def _cypher_run(query: str, include_properties: bool = True) -> str:
                 {"success": False, "error_type": "server_error", "error": str(e)}
             )
         return json.dumps({"success": False, "error": str(e)})
+
+
+def _cypher_query_compatibility(query: str) -> dict:
+    """Describe whether a Cypher query is safe to run in the BloodHound GUI."""
+    aggregation_functions = sorted(
+        {match.group(1).upper() for match in AGGREGATION_PATTERN.finditer(query or "")}
+    )
+    if not aggregation_functions:
+        return {
+            "api_safe": True,
+            "gui_safe": True,
+            "uses_aggregation": False,
+        }
+    return {
+        "api_safe": True,
+        "gui_safe": False,
+        "uses_aggregation": True,
+        "aggregation_functions": aggregation_functions,
+        "warning": (
+            "Aggregation queries are supported through cypher_query but BloodHound's "
+            "GUI may not render them correctly."
+        ),
+        "gui_safe_guidance": (
+            "For GUI use, return individual nodes, edges, or paths instead of "
+            "COUNT/COLLECT/SUM/AVG/MIN/MAX aggregates."
+        ),
+    }
 
 
 # Note: this function may be redundant — needs A/B testing to confirm it adds value vs just extra steps
@@ -945,6 +988,56 @@ def asset_groups(
         ),
         "tag_members": lambda: bloodhound_api.asset_groups.list_asset_group_tag_members(
             asset_group_tag_id, skip=skip, limit=limit
+        ),
+    }
+    return _handle_tool_call(info_type, handlers)
+
+
+def _upload_to_job(job_id: int, file_path: str) -> dict:
+    """Helper for multi-file upload: validate, detect content type, upload to existing job."""
+    path = Path(file_path)
+    bloodhound_api.file_upload._validate_file(path)
+    content_type = (
+        "application/zip" if path.suffix.lower() == ".zip" else "application/json"
+    )
+    file_data = path.read_bytes()
+    bloodhound_api.file_upload.upload_file(job_id, file_data, content_type)
+    return {
+        "job_id": job_id,
+        "file_name": path.name,
+        "file_size_bytes": len(file_data),
+        "status": "uploaded",
+    }
+
+
+@mcp.tool()
+def file_upload(
+    info_type: str = "upload",
+    file_path: str = None,
+    job_id: int = None,
+) -> str:
+    """Upload SharpHound/AzureHound collection files to BloodHound CE for ingest.
+    Accepts .zip (SharpHound ZIP archive) or .json (individual collection file).
+
+    info_type options:
+        upload        - full workflow for a single file: start -> upload -> end
+                        (requires: file_path)
+        start_job     - start a new upload job, returns job_id for multi-file uploads
+        upload_to_job - upload a file to an existing job (requires: job_id, file_path)
+        end_job       - finalize an upload job and trigger ingest (requires: job_id)
+
+    Args:
+        info_type: operation to perform (default: upload)
+        file_path: absolute path to collection file (.zip or .json)
+        job_id: upload job ID (required for upload_to_job and end_job)
+    """
+    handlers = {
+        "upload": lambda: bloodhound_api.file_upload.upload_collection_file(file_path),
+        "start_job": lambda: {"job_id": bloodhound_api.file_upload.start_upload()},
+        "upload_to_job": lambda: _upload_to_job(job_id, file_path),
+        "end_job": lambda: (
+            bloodhound_api.file_upload.end_upload(job_id)
+            or {"status": "ingest_started", "job_id": job_id}
         ),
     }
     return _handle_tool_call(info_type, handlers)

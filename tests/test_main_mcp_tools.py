@@ -841,6 +841,25 @@ class TestCypherQuery:
         assert result["success"] is True
         assert result["has_results"] is True
 
+    @patch("main.bloodhound_api")
+    def test_run_count_query_marks_gui_incompatible(self, api):
+        api.cypher.run_query.return_value = {
+            "metadata": {"has_results": True},
+            "data": {"columns": ["total"], "rows": [{"total": 42}]},
+        }
+        result = json.loads(
+            main.cypher_query(
+                info_type="run",
+                query="MATCH (n) RETURN count(n) AS total",
+            )
+        )
+
+        assert result["success"] is True
+        assert result["query_compatibility"]["api_safe"] is True
+        assert result["query_compatibility"]["gui_safe"] is False
+        assert result["query_compatibility"]["aggregation_functions"] == ["COUNT"]
+        assert "COUNT" in result["query_compatibility"]["gui_safe_guidance"]
+
     def test_interpret_failed_query(self):
         failed = json.dumps({"success": False, "error": "syntax error"})
         result = json.loads(
@@ -1238,3 +1257,87 @@ class TestResponseFormat:
         for r in calls:
             assert isinstance(r, str), f"Tool returned {type(r)}, expected str"
             json.loads(r)  # must be valid JSON
+
+
+class TestFileUpload:
+    """Tests for file_upload composite tool"""
+
+    def test_upload_dispatches_to_upload_collection_file(self, tmp_path):
+        zip_file = tmp_path / "sharphound.zip"
+        zip_file.write_bytes(b"PK\x03\x04fakezip")
+        expected = {
+            "job_id": 1,
+            "file_name": "sharphound.zip",
+            "file_size_bytes": 16,
+            "content_type": "application/zip",
+            "status": "upload_complete",
+        }
+        with patch("main.bloodhound_api") as mock_api:
+            mock_api.file_upload.upload_collection_file.return_value = expected
+            result = json.loads(main.file_upload(info_type="upload", file_path=str(zip_file)))
+        assert result["data"] == expected
+        mock_api.file_upload.upload_collection_file.assert_called_once_with(str(zip_file))
+
+    def test_start_job_returns_job_id(self):
+        with patch("main.bloodhound_api") as mock_api:
+            mock_api.file_upload.start_upload.return_value = 42
+            result = json.loads(main.file_upload(info_type="start_job"))
+        assert result["data"]["job_id"] == 42
+
+    def test_upload_to_job(self, tmp_path):
+        json_file = tmp_path / "users.json"
+        json_file.write_bytes(b'{"data":[]}')
+        with patch("main.bloodhound_api") as mock_api:
+            mock_api.file_upload._validate_file.return_value = None
+            mock_api.file_upload.upload_file.return_value = None
+            result = json.loads(
+                main.file_upload(info_type="upload_to_job", job_id=7, file_path=str(json_file))
+            )
+        assert result["data"]["job_id"] == 7
+        assert result["data"]["file_name"] == "users.json"
+        assert result["data"]["status"] == "uploaded"
+
+    def test_end_job(self):
+        with patch("main.bloodhound_api") as mock_api:
+            mock_api.file_upload.end_upload.return_value = None
+            result = json.loads(main.file_upload(info_type="end_job", job_id=42))
+        assert result["data"]["status"] == "ingest_started"
+        assert result["data"]["job_id"] == 42
+        mock_api.file_upload.end_upload.assert_called_once_with(42)
+
+    def test_unknown_info_type(self):
+        with patch("main.bloodhound_api"):
+            result = json.loads(main.file_upload(info_type="nonexistent"))
+        assert "error" in result
+        assert "nonexistent" in result["error"]
+        for valid in ("upload", "start_job", "upload_to_job", "end_job"):
+            assert valid in result["error"]
+
+    def test_api_error_propagation(self, tmp_path):
+        zip_file = tmp_path / "test.zip"
+        zip_file.write_bytes(b"data")
+        with patch("main.bloodhound_api") as mock_api:
+            mock_api.file_upload.upload_collection_file.side_effect = make_api_error(500)
+            result = json.loads(main.file_upload(info_type="upload", file_path=str(zip_file)))
+        assert "error" in result
+        assert "500" in result["error"]
+
+    def test_connection_error_propagation(self, tmp_path):
+        zip_file = tmp_path / "test.zip"
+        zip_file.write_bytes(b"data")
+        with patch("main.bloodhound_api") as mock_api:
+            mock_api.file_upload.upload_collection_file.side_effect = (
+                BloodhoundConnectionError("connection refused")
+            )
+            result = json.loads(main.file_upload(info_type="upload", file_path=str(zip_file)))
+        assert "error" in result
+        assert "connection" in result["error"].lower()
+
+    def test_file_upload_returns_valid_json(self, tmp_path):
+        zip_file = tmp_path / "test.zip"
+        zip_file.write_bytes(b"PK")
+        with patch("main.bloodhound_api") as mock_api:
+            mock_api.file_upload.upload_collection_file.return_value = {"status": "ok"}
+            result = main.file_upload(info_type="upload", file_path=str(zip_file))
+        assert isinstance(result, str)
+        json.loads(result)
