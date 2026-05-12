@@ -10,6 +10,7 @@ import json
 import logging
 import re
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -857,9 +858,9 @@ def data_quality(
 def custom_nodes(
     info_type: str = "list",
     kind_name: str = None,
-    custom_types_json: str = None,
-    config_json: str = None,
-    icon_config_json: str = None,
+    custom_types_json: Any = None,
+    config_json: Any = None,
+    icon_config_json: Any = None,
 ) -> str:
     """Manage custom node type configs in BloodHound
     info_type options:
@@ -873,13 +874,46 @@ def custom_nodes(
     args:
         info_type: what to retrieve (default: list)
         kind_name: Custom node kind name (for get,update, delete)
-        custom_types_json: JSON string for creating a new node kind (for create)
-        config_json: JSON string for updating a node kind's display config (for update)
-        icon_config_json: JSON string for validating icon config (for validate_icon)
+        custom_types_json: JSON string or object for creating a new node kind (for create)
+        config_json: JSON string or object for updating a node kind's display config (for update)
+        icon_config_json: JSON string or object for validating icon config (for validate_icon)
     """
 
+    def _parse_json_payload(value: Any, argument_name: str):
+        if value is None:
+            raise ValueError(f"{argument_name} is required")
+        if isinstance(value, (dict, list)):
+            return value
+        if not isinstance(value, str):
+            raise ValueError(f"{argument_name} must be a JSON string or object")
+
+        parsed = value
+        for _ in range(3):
+            if not isinstance(parsed, str):
+                return parsed
+            parsed = parsed.strip()
+            if not parsed:
+                raise ValueError(f"{argument_name} cannot be empty")
+            parsed = json.loads(parsed)
+        return parsed
+
+    def _custom_type_configs(payload: Any):
+        if not isinstance(payload, dict):
+            raise ValueError("custom_types_json must be a JSON object")
+        if "custom_types" in payload and isinstance(payload["custom_types"], dict):
+            return payload["custom_types"]
+        return payload
+
+    def _validation_error_message(validation: dict) -> str:
+        if "error" in validation:
+            return validation["error"]
+        if validation.get("errors"):
+            return "; ".join(validation["errors"])
+        return "unknown validation error"
+
     def _create():
-        types = json.loads(custom_types_json)
+        payload = _parse_json_payload(custom_types_json, "custom_types_json")
+        types = _custom_type_configs(payload)
         for name, config in types.items():
             if "icon" in config:
                 validation = bloodhound_api.custom_nodes.validate_icon_config(
@@ -887,22 +921,30 @@ def custom_nodes(
                 )
                 if not validation["valid"]:
                     return {
-                        "error": f"Invalid icon config for {name}: {validation['error']}"
+                        "error": (
+                            f"Invalid icon config for {name}: "
+                            f"{_validation_error_message(validation)}"
+                        )
                     }
-        return bloodhound_api.custom_nodes.create_custom_nodes(types)
+        return bloodhound_api.custom_nodes.create_custom_nodes(payload)
 
     def _update():
-        config = json.loads(config_json)
+        config = _parse_json_payload(config_json, "config_json")
         if "icon" in config:
             validation = bloodhound_api.custom_nodes.validate_icon_config(
                 config["icon"]
             )
             if not validation["valid"]:
-                return {"error": f"Invalid icon config: {validation['error']}"}
+                return {
+                    "error": (
+                        "Invalid icon config: "
+                        f"{_validation_error_message(validation)}"
+                    )
+                }
         return bloodhound_api.custom_nodes.update_custom_node(kind_name, config)
 
     def _validate_icon():
-        icon = json.loads(icon_config_json)
+        icon = _parse_json_payload(icon_config_json, "icon_config_json")
         return bloodhound_api.custom_nodes.validate_icon_config(icon)
 
     handlers = {

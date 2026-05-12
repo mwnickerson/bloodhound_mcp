@@ -2363,7 +2363,11 @@ class CustomNodesClient:
         Returns:
             List of created custom node configurations
         """
-        data = {"custom_types": custom_types}
+        data = (
+            custom_types
+            if "custom_types" in custom_types
+            else {"custom_types": custom_types}
+        )
         return self.base_client.request("POST", "/api/v2/custom-nodes", data=data)
 
     def update_custom_node(
