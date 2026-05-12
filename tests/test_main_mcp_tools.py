@@ -1058,6 +1058,56 @@ class TestCustomNodes:
         assert result["info_type"] == "create"
 
     @patch("main.bloodhound_api")
+    def test_create_accepts_coerced_object_payload(self, api):
+        api.custom_nodes.validate_icon_config.return_value = {"valid": True}
+        api.custom_nodes.create_custom_nodes.return_value = {"created": True}
+        payload = {
+            "GH_User": {
+                "icon": {
+                    "type": "font-awesome",
+                    "name": "user",
+                    "color": "#FF8E40",
+                }
+            }
+        }
+
+        result = json.loads(
+            main.custom_nodes(info_type="create", custom_types_json=payload)
+        )
+
+        assert result["info_type"] == "create"
+        api.custom_nodes.validate_icon_config.assert_called_once_with(
+            payload["GH_User"]["icon"]
+        )
+        api.custom_nodes.create_custom_nodes.assert_called_once_with(payload)
+
+    @patch("main.bloodhound_api")
+    def test_create_accepts_native_custom_types_payload(self, api):
+        api.custom_nodes.validate_icon_config.return_value = {"valid": True}
+        api.custom_nodes.create_custom_nodes.return_value = {"created": True}
+        payload = {
+            "custom_types": {
+                "GH_User": {
+                    "icon": {
+                        "type": "font-awesome",
+                        "name": "user",
+                        "color": "#FF8E40",
+                    }
+                }
+            }
+        }
+
+        result = json.loads(
+            main.custom_nodes(info_type="create", custom_types_json=payload)
+        )
+
+        assert result["info_type"] == "create"
+        api.custom_nodes.validate_icon_config.assert_called_once_with(
+            payload["custom_types"]["GH_User"]["icon"]
+        )
+        api.custom_nodes.create_custom_nodes.assert_called_once_with(payload)
+
+    @patch("main.bloodhound_api")
     def test_create_with_invalid_icon_returns_error(self, api):
         api.custom_nodes.validate_icon_config.return_value = {
             "valid": False,
@@ -1089,6 +1139,33 @@ class TestCustomNodes:
             )
         )
         assert result["info_type"] == "validate_icon"
+
+    @patch("main.bloodhound_api")
+    def test_validate_icon_accepts_coerced_object_payload(self, api):
+        api.custom_nodes.validate_icon_config.return_value = {"valid": True}
+        icon = {"type": "font-awesome", "name": "user", "color": "#FF8E40"}
+
+        result = json.loads(
+            main.custom_nodes(info_type="validate_icon", icon_config_json=icon)
+        )
+
+        assert result["info_type"] == "validate_icon"
+        api.custom_nodes.validate_icon_config.assert_called_once_with(icon)
+
+    @patch("main.bloodhound_api")
+    def test_validate_icon_accepts_double_encoded_json_string(self, api):
+        api.custom_nodes.validate_icon_config.return_value = {"valid": True}
+        icon = {"type": "font-awesome", "name": "user", "color": "#FF8E40"}
+
+        result = json.loads(
+            main.custom_nodes(
+                info_type="validate_icon",
+                icon_config_json=json.dumps(json.dumps(icon)),
+            )
+        )
+
+        assert result["info_type"] == "validate_icon"
+        api.custom_nodes.validate_icon_config.assert_called_once_with(icon)
 
     def test_unknown_info_type(self):
         result = json.loads(main.custom_nodes(info_type="bad"))

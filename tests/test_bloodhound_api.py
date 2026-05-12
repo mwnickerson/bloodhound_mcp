@@ -19,6 +19,7 @@ from lib.bloodhound_api import (
     BloodhoundBaseClient,
     BloodhoundConnectionError,
     ComputerClient,
+    CustomNodesClient,
     CypherClient,
     DomainClient,
     GPOsClient,
@@ -2029,3 +2030,39 @@ class TestFileUploadClient:
                 self.client._validate_file(big_file)
         finally:
             FileUploadClient.MAX_FILE_SIZE = original
+
+
+class TestCustomNodesClient:
+    def setup_method(self):
+        self.mock_base = Mock()
+        self.client = CustomNodesClient(self.mock_base)
+
+    def test_create_custom_nodes_wraps_type_mapping(self):
+        custom_types = {"GH_User": {"icon": {"type": "font-awesome", "name": "user"}}}
+        self.mock_base.request.return_value = {"created": True}
+
+        result = self.client.create_custom_nodes(custom_types)
+
+        assert result == {"created": True}
+        self.mock_base.request.assert_called_once_with(
+            "POST",
+            "/api/v2/custom-nodes",
+            data={"custom_types": custom_types},
+        )
+
+    def test_create_custom_nodes_preserves_native_payload_shape(self):
+        payload = {
+            "custom_types": {
+                "GH_User": {"icon": {"type": "font-awesome", "name": "user"}}
+            }
+        }
+        self.mock_base.request.return_value = {"created": True}
+
+        result = self.client.create_custom_nodes(payload)
+
+        assert result == {"created": True}
+        self.mock_base.request.assert_called_once_with(
+            "POST",
+            "/api/v2/custom-nodes",
+            data=payload,
+        )
