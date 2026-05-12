@@ -25,6 +25,7 @@ from lib.bloodhound_api import (
     GPOsClient,
     GraphClient,
     GroupClient,
+    OpenGraphExtensionsClient,
     OUsClient,
     UserClient,
 )
@@ -259,6 +260,32 @@ class TestBloodhoundBaseClient:
         
         # Check that data was JSON encoded
         assert kwargs['data'] == b'{"query": "test"}'
+
+    @patch('requests.request')
+    def test_request_encodes_list_params_with_doseq(self, mock_request):
+        """Test request method encodes repeated query params for list values."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "success"}
+        mock_response.raise_for_status.return_value = None
+        mock_request.return_value = mock_response
+
+        client = BloodhoundBaseClient(
+            domain="test.local",
+            token_id="test_id",
+            token_key="test_key",
+        )
+
+        result = client.request(
+            "GET",
+            "/api/v2/extensions-edges",
+            params={"schemas": ["GitHub", "Okta"]},
+        )
+
+        assert result == {"result": "success"}
+        args, kwargs = mock_request.call_args
+        assert "schemas=GitHub" in kwargs["url"]
+        assert "schemas=Okta" in kwargs["url"]
 
     @patch('requests.request')
     def test_request_http_error_with_json_response(self, mock_request):
@@ -2065,4 +2092,56 @@ class TestCustomNodesClient:
             "POST",
             "/api/v2/custom-nodes",
             data=payload,
+        )
+
+
+class TestOpenGraphExtensionsClient:
+    def setup_method(self):
+        self.mock_base = Mock()
+        self.client = OpenGraphExtensionsClient(self.mock_base)
+
+    def test_list_extensions(self):
+        self.mock_base.request.return_value = {"data": {"extensions": []}}
+
+        result = self.client.list_extensions()
+
+        assert result == {"data": {"extensions": []}}
+        self.mock_base.request.assert_called_once_with("GET", "/api/v2/extensions")
+
+    def test_upsert_extension(self):
+        payload = {"schema": {"name": "GitHub"}, "node_kinds": []}
+        self.mock_base.request.return_value = {"data": {"id": 1}}
+
+        result = self.client.upsert_extension(payload)
+
+        assert result == {"data": {"id": 1}}
+        self.mock_base.request.assert_called_once_with(
+            "PUT",
+            "/api/v2/extensions",
+            data=payload,
+        )
+
+    def test_delete_extension(self):
+        self.mock_base.raw_request.return_value = None
+
+        result = self.client.delete_extension(7)
+
+        assert result is None
+        self.mock_base.raw_request.assert_called_once_with(
+            "DELETE", "/api/v2/extensions/7"
+        )
+
+    def test_list_edge_kinds_with_filters(self):
+        self.mock_base.request.return_value = {"data": []}
+
+        result = self.client.list_edge_kinds(
+            schemas=["GitHub", "Okta"],
+            is_traversable="eq:true",
+        )
+
+        assert result == {"data": []}
+        self.mock_base.request.assert_called_once_with(
+            "GET",
+            "/api/v2/extensions-edges",
+            params={"schemas": ["GitHub", "Okta"], "is_traversable": "eq:true"},
         )

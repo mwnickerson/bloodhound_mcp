@@ -169,7 +169,7 @@ class BloodhoundBaseClient:
         """
         # Add query parameters if provided
         if params:
-            uri = f"{uri}?{urlencode(params)}"
+            uri = f"{uri}?{urlencode(params, doseq=True)}"
 
         # Prepare request body if provided
         body = None
@@ -218,7 +218,7 @@ class BloodhoundBaseClient:
             Raw requests.Response object
         """
         if params:
-            uri = f"{uri}?{urlencode(params)}"
+            uri = f"{uri}?{urlencode(params, doseq=True)}"
 
         response = self._request(method, uri, body, content_type=content_type)
 
@@ -355,6 +355,7 @@ class BloodhoundAPI:
         self.cypher = CypherClient(self.base_client)
         self.data_quality = DataQualityClient(self.base_client)
         self.custom_nodes = CustomNodesClient(self.base_client)
+        self.opengraph_extensions = OpenGraphExtensionsClient(self.base_client)
         self.asset_groups = AssetGroupsClient(self.base_client)
         self.file_upload = FileUploadClient(self.base_client)
 
@@ -2439,6 +2440,44 @@ class CustomNodesClient:
             validation_result["valid"] = False
             
         return validation_result
+
+
+class OpenGraphExtensionsClient:
+    """Client for BloodHound v9 OpenGraph extension management endpoints."""
+
+    def __init__(self, base_client: BloodhoundBaseClient):
+        self.base_client = base_client
+
+    def list_extensions(self) -> Dict[str, Any]:
+        """List OpenGraph extension information."""
+        return self.base_client.request("GET", "/api/v2/extensions")
+
+    def upsert_extension(self, extension: Dict[str, Any]) -> Dict[str, Any]:
+        """Create or update an OpenGraph extension schema."""
+        return self.base_client.request("PUT", "/api/v2/extensions", data=extension)
+
+    def delete_extension(self, extension_id: int) -> None:
+        """Delete an OpenGraph extension by ID."""
+        self.base_client.raw_request(
+            "DELETE", f"/api/v2/extensions/{extension_id}"
+        )
+
+    def list_edge_kinds(
+        self,
+        schemas: Optional[List[str]] = None,
+        is_traversable: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """List edge kinds across OpenGraph schemas."""
+        params: Dict[str, Any] = {}
+        if schemas:
+            params["schemas"] = schemas
+        if is_traversable:
+            params["is_traversable"] = is_traversable
+        return self.base_client.request(
+            "GET",
+            "/api/v2/extensions-edges",
+            params=params or None,
+        )
 
 
 class AssetGroupsClient:

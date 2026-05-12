@@ -12,7 +12,7 @@ A Model Context Protocol (MCP) server that connects LLMs to BloodHound Community
 
 ## How It Works
 
-The server exposes BloodHound CE's REST API and Neo4j graph through a set of **11 composite MCP tools**, **10 reference resources**, and a **system prompt** tuned for offensive security analysis.
+The server exposes BloodHound CE's REST API and Neo4j graph through a set of **13 composite MCP tools**, **10 reference resources**, and a **system prompt** tuned for offensive security analysis.
 
 ### Composite Tools
 
@@ -31,7 +31,8 @@ Each tool uses an `info_type` parameter to select what data is returned, keeping
 | `cypher_query` | `run`, `saved_list`, `saved_get` |
 | `data_quality` | `stats`, `platform_list`, `platform_info` |
 | `asset_groups` | `list`, `members`, `custom_selectors` |
-| `custom_nodes` | `list`, `get`, `create`, `update`, `delete` |
+| `custom_nodes` | `list`, `get`, `create`, `update`, `delete`, `validate_icon`, `extension_list`, `extension_upsert`, `extension_delete`, `extension_edges` |
+| `file_upload` | `upload`, `start_job`, `upload_to_job`, `end_job` |
 
 ### Resources
 
@@ -215,9 +216,12 @@ Find all computers where DOMAIN USERS can RDP
 
 BloodHound 8.0+ supports custom node types via OpenGraph, letting you model non-AD infrastructure (cloud resources, databases, custom assets) in the same graph as Active Directory.
 
-The `custom_nodes` tool handles CRUD operations on node type configurations. Use the `bloodhound://opengraph/guide` and `bloodhound://opengraph/examples` resources for schema design and Cypher patterns.
+The `custom_nodes` tool handles legacy CRUD operations on node type display configurations through `/api/v2/custom-nodes`. For BloodHound v9.0.0+ instances with OpenGraph extension management enabled, the same composite tool also supports `/api/v2/extensions` and `/api/v2/extensions-edges` via `extension_list`, `extension_upsert`, `extension_delete`, and `extension_edges`.
+
+Use the `bloodhound://opengraph/guide` and `bloodhound://opengraph/examples` resources for schema design and Cypher patterns. For structured OpenGraph schemas, upsert the extension schema first, then ingest collection data with `file_upload`.
 
 > Requires BloodHound CE 8.0 or later.
+> OpenGraph extension management requires BloodHound 9.0.0+ and the corresponding feature flag to be enabled.
 
 ---
 

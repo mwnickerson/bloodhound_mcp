@@ -1167,6 +1167,146 @@ class TestCustomNodes:
         assert result["info_type"] == "validate_icon"
         api.custom_nodes.validate_icon_config.assert_called_once_with(icon)
 
+    @patch("main.bloodhound_api")
+    def test_extension_list(self, api):
+        api.opengraph_extensions.list_extensions.return_value = {
+            "data": {"extensions": []}
+        }
+
+        result = json.loads(main.custom_nodes(info_type="extension_list"))
+
+        assert result["info_type"] == "extension_list"
+        assert result["data"] == {"data": {"extensions": []}}
+        api.opengraph_extensions.list_extensions.assert_called_once()
+
+    @patch("main.bloodhound_api")
+    def test_extension_upsert_accepts_object_payload(self, api):
+        payload = {"schema": {"name": "GitHub"}, "node_kinds": []}
+        api.opengraph_extensions.upsert_extension.return_value = {"data": {"id": 3}}
+
+        result = json.loads(
+            main.custom_nodes(info_type="extension_upsert", extension_json=payload)
+        )
+
+        assert result["info_type"] == "extension_upsert"
+        assert result["data"]["source"] == {"type": "argument"}
+        assert result["data"]["result"] == {"data": {"id": 3}}
+        api.opengraph_extensions.upsert_extension.assert_called_once_with(payload)
+
+    @patch("main.bloodhound_api")
+    def test_extension_upsert_accepts_json_string(self, api):
+        payload = {"schema": {"name": "GitHub"}, "node_kinds": []}
+        api.opengraph_extensions.upsert_extension.return_value = {"data": {"id": 3}}
+
+        result = json.loads(
+            main.custom_nodes(
+                info_type="extension_upsert",
+                extension_json=json.dumps(payload),
+            )
+        )
+
+        assert result["info_type"] == "extension_upsert"
+        api.opengraph_extensions.upsert_extension.assert_called_once_with(payload)
+
+    @patch("main.bloodhound_api")
+    def test_extension_upsert_accepts_file_path(self, api, tmp_path):
+        payload = {"schema": {"name": "GitHub"}, "node_kinds": []}
+        extension_file = tmp_path / "github-extension.json"
+        extension_file.write_text(json.dumps(payload))
+        api.opengraph_extensions.upsert_extension.return_value = {"data": {"id": 3}}
+
+        result = json.loads(
+            main.custom_nodes(
+                info_type="extension_upsert",
+                extension_file_path=str(extension_file),
+            )
+        )
+
+        assert result["info_type"] == "extension_upsert"
+        assert result["data"]["source"]["type"] == "file"
+        assert result["data"]["source"]["file_name"] == "github-extension.json"
+        api.opengraph_extensions.upsert_extension.assert_called_once_with(payload)
+
+    @patch("main.bloodhound_api")
+    def test_extension_upsert_rejects_non_json_file_path(self, api, tmp_path):
+        extension_file = tmp_path / "github-extension.txt"
+        extension_file.write_text("{}")
+
+        result = json.loads(
+            main.custom_nodes(
+                info_type="extension_upsert",
+                extension_file_path=str(extension_file),
+            )
+        )
+
+        assert "error" in result
+        assert "Extension file must be JSON" in result["error"]
+        api.opengraph_extensions.upsert_extension.assert_not_called()
+
+    @patch("main.bloodhound_api")
+    def test_extension_upsert_returns_feature_unavailable_on_404(self, api):
+        api.opengraph_extensions.upsert_extension.side_effect = make_api_error(404)
+
+        result = json.loads(
+            main.custom_nodes(
+                info_type="extension_upsert",
+                extension_json={"schema": {"name": "GitHub"}},
+            )
+        )
+
+        assert result["info_type"] == "extension_upsert"
+        assert result["data"]["status"] == "feature_unavailable"
+        assert result["data"]["endpoint"] == "/api/v2/extensions"
+        assert "fallback_hint" in result["data"]
+
+    @patch("main.bloodhound_api")
+    def test_extension_delete(self, api):
+        api.opengraph_extensions.delete_extension.return_value = None
+
+        result = json.loads(
+            main.custom_nodes(info_type="extension_delete", extension_id=7)
+        )
+
+        assert result["info_type"] == "extension_delete"
+        assert result["data"] == {"status": "deleted", "extension_id": 7}
+        api.opengraph_extensions.delete_extension.assert_called_once_with(7)
+
+    @patch("main.bloodhound_api")
+    def test_extension_edges_filters(self, api):
+        api.opengraph_extensions.list_edge_kinds.return_value = {"data": []}
+
+        result = json.loads(
+            main.custom_nodes(
+                info_type="extension_edges",
+                schemas=["GitHub", "Okta"],
+                is_traversable=True,
+            )
+        )
+
+        assert result["info_type"] == "extension_edges"
+        api.opengraph_extensions.list_edge_kinds.assert_called_once_with(
+            schemas=["GitHub", "Okta"],
+            is_traversable="eq:true",
+        )
+
+    @patch("main.bloodhound_api")
+    def test_extension_edges_accepts_json_schema_filter(self, api):
+        api.opengraph_extensions.list_edge_kinds.return_value = {"data": []}
+
+        result = json.loads(
+            main.custom_nodes(
+                info_type="extension_edges",
+                schemas=json.dumps(["GitHub"]),
+                is_traversable="neq:false",
+            )
+        )
+
+        assert result["info_type"] == "extension_edges"
+        api.opengraph_extensions.list_edge_kinds.assert_called_once_with(
+            schemas=["GitHub"],
+            is_traversable="neq:false",
+        )
+
     def test_unknown_info_type(self):
         result = json.loads(main.custom_nodes(info_type="bad"))
         assert "error" in result
