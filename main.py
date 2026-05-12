@@ -86,7 +86,7 @@ def bloodhound_assistant() -> str:
     1. Use domain_info(info_type="search", query="...") to find objects by name or ID
     2. Use composite tools to drill into specific objects or request all information about the object
     3. Use cypher_query(info_type="run") for advanced cross-domain analysis
-    4. Use custom_nodes to manage OpenGraph node type configurations
+    4. Use custom_nodes to manage legacy OpenGraph custom node display configs and BloodHound v9 extension schemas
     5. Use file_upload(info_type="upload", file_path="...") to ingest SharpHound/AzureHound collection data (.zip or .json)
     6. For Azure: prefer Cypher queries over REST API tools
     7. For OpenGraph: prompt the user for OpenGraph schema and example queries, then use these to create Cypher queries
@@ -129,7 +129,7 @@ def bloodhound_assistant() -> str:
     - bloodhound://guides/adcs-methodology — Detailed ESC analysis and exploitation
 
     OpenGraph (load when working with custom nodes):
-    - bloodhound://opengraph/guide — Custom node schema design and best practices
+    - bloodhound://opengraph/guide — Custom node and extension schema design
     - bloodhound://opengraph/examples — SQL Server and Web App implementation examples
 
     Each tool's info_type parameter controls what data is retrieved.
@@ -861,15 +861,24 @@ def custom_nodes(
     custom_types_json: Any = None,
     config_json: Any = None,
     icon_config_json: Any = None,
+    extension_json: Any = None,
+    extension_file_path: str = None,
+    extension_id: int = None,
+    schemas: Any = None,
+    is_traversable: Any = None,
 ) -> str:
-    """Manage custom node type configs in BloodHound
+    """Manage OpenGraph custom node display configs and v9 extension schemas.
     info_type options:
-        list - list all custome node configs
+        list - list all custom node configs
         get - get details for a specific node kind (needs: kind_name)
         create - create new node kind with display metadata (needs: custom_types_json)
         update - update a node kind's display config (needs: kind_name, config_json)
         delete - delete a node kind (needs: kind_name)
         validate_icon - validate icon config before creating/updating (needs: icon_config_json)
+        extension_list - list OpenGraph extensions (BloodHound v9+)
+        extension_upsert - create/update extension schema (needs: extension_json or extension_file_path)
+        extension_delete - delete extension schema by ID (needs: extension_id)
+        extension_edges - list extension edge kinds (optional: schemas, is_traversable)
 
     args:
         info_type: what to retrieve (default: list)
@@ -877,6 +886,11 @@ def custom_nodes(
         custom_types_json: JSON string or object for creating a new node kind (for create)
         config_json: JSON string or object for updating a node kind's display config (for update)
         icon_config_json: JSON string or object for validating icon config (for validate_icon)
+        extension_json: JSON string or object for BloodHound v9 OpenGraph extension upsert
+        extension_file_path: local JSON file path for BloodHound v9 OpenGraph extension upsert
+        extension_id: OpenGraph extension ID for delete
+        schemas: schema name or list of schema names for extension edge filtering
+        is_traversable: bool or BloodHound filter string (for example: eq:true)
     """
 
     def _parse_json_payload(value: Any, argument_name: str):
@@ -910,6 +924,77 @@ def custom_nodes(
         if validation.get("errors"):
             return "; ".join(validation["errors"])
         return "unknown validation error"
+
+    def _feature_unavailable(endpoint: str) -> dict:
+        return {
+            "status": "feature_unavailable",
+            "endpoint": endpoint,
+            "message": (
+                "BloodHound returned 404 for this OpenGraph extension endpoint. "
+                "The instance may be older than v9.0.0 or the "
+                "opengraph_extension_management feature flag may be disabled."
+            ),
+            "fallback_hint": (
+                "Generic OpenGraph ingest can still work through file_upload, "
+                "and legacy display metadata can still use custom_nodes "
+                "info_type=create/update against /api/v2/custom-nodes."
+            ),
+        }
+
+    def _extension_call(endpoint: str, operation):
+        try:
+            return operation()
+        except BloodhoundAPIError as e:
+            if e.status_code == 404:
+                return _feature_unavailable(endpoint)
+            raise
+
+    def _extension_payload():
+        if extension_file_path:
+            path = Path(extension_file_path)
+            if not path.exists():
+                raise FileNotFoundError(f"Extension file not found: {path}")
+            if not path.is_file():
+                raise ValueError(f"Extension path is not a file: {path}")
+            if path.suffix.lower() != ".json":
+                raise ValueError(f"Extension file must be JSON: {path}")
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            return payload, {
+                "type": "file",
+                "path": str(path),
+                "file_name": path.name,
+                "file_size_bytes": path.stat().st_size,
+            }
+
+        payload = _parse_json_payload(extension_json, "extension_json")
+        if not isinstance(payload, dict):
+            raise ValueError("extension_json must be a JSON object")
+        return payload, {"type": "argument"}
+
+    def _schemas_filter():
+        if schemas is None:
+            return None
+        if isinstance(schemas, list):
+            return [str(schema) for schema in schemas]
+        if isinstance(schemas, str):
+            value = schemas.strip()
+            if not value:
+                return None
+            if value.startswith("["):
+                parsed = _parse_json_payload(value, "schemas")
+                if not isinstance(parsed, list):
+                    raise ValueError("schemas JSON must be a list")
+                return [str(schema) for schema in parsed]
+            return [value]
+        return [str(schemas)]
+
+    def _is_traversable_filter():
+        if is_traversable is None:
+            return None
+        if isinstance(is_traversable, bool):
+            return f"eq:{str(is_traversable).lower()}"
+        value = str(is_traversable).strip()
+        return value or None
 
     def _create():
         payload = _parse_json_payload(custom_types_json, "custom_types_json")
@@ -947,6 +1032,44 @@ def custom_nodes(
         icon = _parse_json_payload(icon_config_json, "icon_config_json")
         return bloodhound_api.custom_nodes.validate_icon_config(icon)
 
+    def _extension_list():
+        return _extension_call(
+            "/api/v2/extensions",
+            lambda: bloodhound_api.opengraph_extensions.list_extensions(),
+        )
+
+    def _extension_upsert():
+        payload, source = _extension_payload()
+        result = _extension_call(
+            "/api/v2/extensions",
+            lambda: bloodhound_api.opengraph_extensions.upsert_extension(payload),
+        )
+        if isinstance(result, dict) and result.get("status") == "feature_unavailable":
+            return result
+        return {"source": source, "result": result}
+
+    def _extension_delete():
+        if extension_id is None:
+            raise ValueError("extension_id is required")
+        normalized_extension_id = int(extension_id)
+        result = _extension_call(
+            f"/api/v2/extensions/{normalized_extension_id}",
+            lambda: bloodhound_api.opengraph_extensions.delete_extension(
+                normalized_extension_id
+            )
+            or {"status": "deleted", "extension_id": normalized_extension_id},
+        )
+        return result
+
+    def _extension_edges():
+        return _extension_call(
+            "/api/v2/extensions-edges",
+            lambda: bloodhound_api.opengraph_extensions.list_edge_kinds(
+                schemas=_schemas_filter(),
+                is_traversable=_is_traversable_filter(),
+            ),
+        )
+
     handlers = {
         "list": lambda: bloodhound_api.custom_nodes.get_all_custom_nodes(),
         "get": lambda: bloodhound_api.custom_nodes.get_custom_node(kind_name),
@@ -954,6 +1077,10 @@ def custom_nodes(
         "update": _update,
         "delete": lambda: bloodhound_api.custom_nodes.delete_custom_node(kind_name),
         "validate_icon": _validate_icon,
+        "extension_list": _extension_list,
+        "extension_upsert": _extension_upsert,
+        "extension_delete": _extension_delete,
+        "extension_edges": _extension_edges,
     }
     return _handle_tool_call(info_type, handlers)
 
@@ -1777,6 +1904,8 @@ def opengraph_guide() -> str:
     2. OpenGraph Schema: JSON structure for ingesting nodes and edges
     3. Visual Config: Icons and colors for node display in BloodHound UI
     4. Relationships: Directed edges connecting custom nodes to AD/Azure objects
+    5. Extension Schemas: BloodHound v9 structured schemas for node kinds,
+       relationship kinds, environments, icons, properties, and findings
 
     Schema Structure
     ----------------
@@ -1830,11 +1959,24 @@ def opengraph_guide() -> str:
 
     Tool Workflow
     -------------
+    Legacy custom-node display configuration:
     - custom_nodes(info_type="list") — list all custom node type configs
     - custom_nodes(info_type="get", kind_name="...") — get specific type config
     - custom_nodes(info_type="create", custom_types_json="...") — create types
     - custom_nodes(info_type="update", kind_name="...", config_json="...") — update
     - custom_nodes(info_type="delete", kind_name="...") — delete type config
+
+    BloodHound v9 OpenGraph extension management:
+    - custom_nodes(info_type="extension_list") — list extension schemas
+    - custom_nodes(info_type="extension_upsert", extension_json={...}) — upsert inline schema
+    - custom_nodes(info_type="extension_upsert", extension_file_path="...") — upsert schema file
+    - custom_nodes(info_type="extension_delete", extension_id=123) — delete extension schema
+    - custom_nodes(info_type="extension_edges", schemas=["..."], is_traversable=True) — list extension edge kinds
+
+    If extension endpoints return feature_unavailable, the BloodHound instance
+    is likely older than v9.0.0 or opengraph_extension_management is disabled.
+    Generic OpenGraph ingest may still work through file_upload, but structured
+    extension schema management is unavailable until the server supports it.
     """
 
 
