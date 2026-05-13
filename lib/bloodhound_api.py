@@ -1968,17 +1968,20 @@ class CypherClient:
                     raise
 
             except BloodhoundAPIError as e:
+                status_code = e.status_code
+
                 # Don't retry client errors (4xx) except rate limiting
-                if e.status_code in [400, 401, 403]:
+                if status_code in [400, 401, 403]:
                     raise
 
                 # Retry rate limiting and server errors
                 last_exception = e
                 if attempt < max_retries and (
-                    e.status_code == 429 or e.status_code >= 500
+                    status_code == 429
+                    or (status_code is not None and status_code >= 500)
                 ):
                     wait_time = 2**attempt
-                    if e.status_code == 429:
+                    if status_code == 429:
                         wait_time = max(
                             wait_time, 10
                         )  # Minimum 10 seconds for rate limiting

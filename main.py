@@ -712,34 +712,131 @@ def _cypher_run(query: str, include_properties: bool = True) -> str:
             }
         )
     except BloodhoundAPIError as e:
-        # Error handling based on status codes; BH errors are not very descriptive beyond the status number
-        # Future: expand with more specific messages as the BH API improves error responses
-        error_map = {
-            400: (
-                "syntax_error",
-                "check node labels, relationship types, and property names",
-            ),
-            401: (
-                "auth_error",
-                "authentication failed - check credentials and permissions",
-            ),
-            403: ("permission_error", "you do not have permission to run this query"),
-            404: ("not_found", "the query does not have any results"),
-            500: (
-                "server_failure",
-                "the query may have returned too much data, try using a limit",
-            ),
-        }
-        if e.status_code in error_map:
-            etype, hint = error_map[e.status_code]
-            return json.dumps(
-                {"success": False, "error_type": etype, "error": str(e), "hint": hint}
-            )
-        if e.status_code > 500:
-            return json.dumps(
-                {"success": False, "error_type": "server_error", "error": str(e)}
-            )
-        return json.dumps({"success": False, "error": str(e)})
+        return json.dumps(_cypher_api_error_response(e))
+
+
+def _api_error_status(error: BloodhoundAPIError) -> int | None:
+    """Return the best available HTTP status for a BloodHound API error."""
+    status = getattr(error, "status_code", None)
+    if status is not None:
+        return status
+    response = getattr(error, "response", None)
+    return getattr(response, "status_code", None)
+
+
+def _api_error_body(error: BloodhoundAPIError) -> tuple[str, str | None]:
+    """Extract useful response text and request ID from a BloodHound API error."""
+    response = getattr(error, "response", None)
+    request_id = None
+    if response is None:
+        return str(error), request_id
+
+    try:
+        payload = response.json()
+    except Exception:
+        payload = None
+
+    if isinstance(payload, dict):
+        request_id = (
+            payload.get("request_id")
+            or payload.get("requestId")
+            or payload.get("requestid")
+        )
+        for key in ("error", "message", "detail", "details"):
+            value = payload.get(key)
+            if value:
+                return str(value), request_id
+        try:
+            return json.dumps(payload), request_id
+        except TypeError:
+            return str(payload), request_id
+
+    body_text = getattr(response, "text", None)
+    if body_text:
+        return str(body_text), request_id
+
+    return str(error), request_id
+
+
+def _cypher_error_hint(error_type: str, error_text: str) -> str:
+    normalized = error_text.lower()
+    if "multiple result columns with the same name" in normalized:
+        return (
+            "Check Cypher syntax; duplicate RETURN column names are not supported. "
+            "Remove duplicates or alias repeated expressions."
+        )
+
+    hints = {
+        "syntax_error": (
+            "Check Cypher syntax, labels, relationship types, property names, and "
+            "RETURN aliases."
+        ),
+        "query_error": (
+            "BloodHound/Neo4j rejected the query. Check generated Cypher semantics "
+            "and simplify or alias returned expressions."
+        ),
+        "auth_error": "Authentication failed - check credentials and token validity.",
+        "permission_error": "You do not have permission to run this query.",
+        "not_found": "The requested Cypher endpoint or query target was not found.",
+        "rate_limit": "Rate limit exceeded - wait and retry with a smaller request.",
+        "server_error": (
+            "BloodHound returned a server error. Retry later or reduce query scope "
+            "if the query may be expensive."
+        ),
+        "api_error": "BloodHound returned an API error without a recognized status.",
+    }
+    return hints.get(error_type, hints["api_error"])
+
+
+def _classify_cypher_api_error(status: int | None, error_text: str) -> str:
+    normalized = error_text.lower()
+    has_syntax_marker = any(
+        marker in normalized
+        for marker in (
+            "syntaxerror",
+            "syntax error",
+            "statement.syntax",
+            "multiple result columns",
+        )
+    )
+    has_query_marker = any(
+        marker in normalized
+        for marker in ("neo4jerror", "neo.clienterror", "cypher", "query")
+    )
+
+    if status == 400:
+        return "syntax_error"
+    if status == 401:
+        return "auth_error"
+    if status == 403:
+        return "permission_error"
+    if status == 404:
+        return "not_found"
+    if status == 429:
+        return "rate_limit"
+    if status is not None and status >= 500:
+        if has_syntax_marker:
+            return "syntax_error"
+        if has_query_marker:
+            return "query_error"
+        return "server_error"
+    return "api_error"
+
+
+def _cypher_api_error_response(error: BloodhoundAPIError) -> dict:
+    status = _api_error_status(error)
+    error_text, request_id = _api_error_body(error)
+    error_type = _classify_cypher_api_error(status, error_text)
+    response = {
+        "success": False,
+        "error_type": error_type,
+        "http_status": status,
+        "error": error_text,
+        "hint": _cypher_error_hint(error_type, error_text),
+    }
+    if request_id:
+        response["request_id"] = request_id
+    return response
 
 
 def _cypher_query_compatibility(query: str) -> dict:

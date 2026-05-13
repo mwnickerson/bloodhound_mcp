@@ -50,6 +50,33 @@ def make_api_error(status_code: int) -> BloodhoundAPIError:
     return BloodhoundAPIError(f"HTTP {status_code}", response)
 
 
+def make_api_error_with_body(
+    status_code: int | None,
+    body: dict | str | None = None,
+    response_status_code: int | None = None,
+) -> BloodhoundAPIError:
+    response = MagicMock()
+    if response_status_code is None and status_code is None:
+        response = None
+    else:
+        response.status_code = (
+            response_status_code if response_status_code is not None else status_code
+        )
+        if isinstance(body, dict):
+            response.json.return_value = body
+            response.text = json.dumps(body)
+        elif isinstance(body, str):
+            response.json.side_effect = ValueError("not json")
+            response.text = body
+        else:
+            response.json.side_effect = ValueError("not json")
+            response.text = ""
+
+    error = BloodhoundAPIError(f"HTTP {status_code}", response)
+    error.status_code = status_code
+    return error
+
+
 # ---------------------------------------------------------------------------
 # _handle_tool_call
 # ---------------------------------------------------------------------------
@@ -782,6 +809,7 @@ class TestCypherQuery:
         result = json.loads(main.cypher_query(info_type="run", query="MATCH garbage"))
         assert result["success"] is False
         assert result["error_type"] == "syntax_error"
+        assert result["http_status"] == 400
         assert "hint" in result
 
     @patch("main.bloodhound_api")
@@ -792,6 +820,7 @@ class TestCypherQuery:
         )
         assert result["success"] is False
         assert result["error_type"] == "auth_error"
+        assert result["http_status"] == 401
 
     @patch("main.bloodhound_api")
     def test_run_permission_error(self, api):
@@ -801,6 +830,7 @@ class TestCypherQuery:
         )
         assert result["success"] is False
         assert result["error_type"] == "permission_error"
+        assert result["http_status"] == 403
 
     @patch("main.bloodhound_api")
     def test_run_not_found(self, api):
@@ -810,15 +840,17 @@ class TestCypherQuery:
         )
         assert result["success"] is False
         assert result["error_type"] == "not_found"
+        assert result["http_status"] == 404
 
     @patch("main.bloodhound_api")
-    def test_run_server_failure(self, api):
+    def test_run_server_error(self, api):
         api.cypher.run_query.side_effect = make_api_error(500)
         result = json.loads(
             main.cypher_query(info_type="run", query="MATCH (n) RETURN n")
         )
         assert result["success"] is False
-        assert result["error_type"] == "server_failure"
+        assert result["error_type"] == "server_error"
+        assert result["http_status"] == 500
 
     @patch("main.bloodhound_api")
     def test_run_server_error_above_500(self, api):
@@ -828,6 +860,77 @@ class TestCypherQuery:
         )
         assert result["success"] is False
         assert result["error_type"] == "server_error"
+        assert result["http_status"] == 503
+
+    @patch("main.bloodhound_api")
+    def test_run_rate_limit_error(self, api):
+        api.cypher.run_query.side_effect = make_api_error(429)
+        result = json.loads(
+            main.cypher_query(info_type="run", query="MATCH (n) RETURN n")
+        )
+        assert result["success"] is False
+        assert result["error_type"] == "rate_limit"
+        assert result["http_status"] == 429
+
+    @patch("main.bloodhound_api")
+    def test_run_uses_response_status_when_error_status_is_none(self, api):
+        body = {
+            "error": (
+                "Neo4jError: Neo.ClientError.Statement.SyntaxError "
+                "(Multiple result columns with the same name are not supported)"
+            ),
+            "request_id": "req-123",
+        }
+        api.cypher.run_query.side_effect = make_api_error_with_body(
+            None,
+            body=body,
+            response_status_code=500,
+        )
+
+        result = json.loads(
+            main.cypher_query(
+                info_type="run",
+                query=(
+                    "MATCH (u:User) RETURN u.name, "
+                    "u.serviceprincipalnames, u.serviceprincipalnames"
+                ),
+            )
+        )
+
+        assert result["success"] is False
+        assert result["error_type"] == "syntax_error"
+        assert result["http_status"] == 500
+        assert result["request_id"] == "req-123"
+        assert "Multiple result columns" in result["error"]
+        assert "duplicate RETURN column names" in result["hint"]
+
+    @patch("main.bloodhound_api")
+    def test_run_missing_status_and_response_returns_api_error(self, api):
+        api.cypher.run_query.side_effect = make_api_error_with_body(None)
+
+        result = json.loads(
+            main.cypher_query(info_type="run", query="MATCH (n) RETURN n")
+        )
+
+        assert result["success"] is False
+        assert result["error_type"] == "api_error"
+        assert result["http_status"] is None
+        assert "hint" in result
+
+    @patch("main.bloodhound_api")
+    def test_run_500_neo4j_client_error_classified_as_query_error(self, api):
+        api.cypher.run_query.side_effect = make_api_error_with_body(
+            500,
+            body="Neo4jError: Neo.ClientError.Statement.TypeError invalid expression",
+        )
+
+        result = json.loads(
+            main.cypher_query(info_type="run", query="MATCH (n) RETURN n")
+        )
+
+        assert result["success"] is False
+        assert result["error_type"] == "query_error"
+        assert result["http_status"] == 500
 
     @patch("main.bloodhound_api")
     def test_run_metadata_enriched_response(self, api):
