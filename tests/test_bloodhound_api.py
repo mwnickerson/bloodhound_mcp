@@ -1589,6 +1589,21 @@ class TestCypherClient:
         # Should only be called once (no retries for client errors)
         assert mock_request.call_count == 1
 
+    def test_run_query_with_retry_missing_status_does_not_type_error(self):
+        """Test missing status code API errors do not crash retry handling."""
+        error = BloodhoundAPIError("unknown API error", response=None)
+        error.status_code = None
+        self.cypher_client.run_query = Mock(side_effect=error)
+
+        with pytest.raises(BloodhoundAPIError):
+            self.cypher_client.run_query_with_retry(
+                "MATCH (n) RETURN n",
+                True,
+                max_retries=1,
+            )
+
+        self.cypher_client.run_query.assert_called_once()
+
     def test_validate_query_empty(self):
         """Test validate_query with empty query"""
         result = self.cypher_client.validate_query("")
