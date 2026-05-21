@@ -13,9 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-
-# Import FastMCP
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 # Import Bloodhound API client
 from lib.bloodhound_api import (
@@ -37,12 +35,30 @@ AGGREGATION_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# Load environment variables
-load_dotenv()
+
+def load_environment() -> None:
+    """Load local configuration for direct server execution."""
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+
 
 # Initialize the MCP server and Bloodhound API client
 mcp = FastMCP("bloodhound_mcp")
-bloodhound_api = BloodhoundAPI()
+
+
+class LazyBloodhoundAPI:
+    def __init__(self) -> None:
+        self._client: BloodhoundAPI | None = None
+
+    def _get_client(self) -> BloodhoundAPI:
+        if self._client is None:
+            self._client = BloodhoundAPI()
+        return self._client
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._get_client(), name)
+
+
+bloodhound_api = LazyBloodhoundAPI()
 
 
 # Helper function
@@ -2533,4 +2549,5 @@ def offensive_query_library() -> str:
 
 
 if __name__ == "__main__":
+    load_environment()
     mcp.run()

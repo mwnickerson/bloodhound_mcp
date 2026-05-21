@@ -1,6 +1,7 @@
 # Environment files containing secrets
 .env
 .env.*
+!.env.example
 
 # Python-specific
 __pycache__/

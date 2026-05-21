@@ -1,4 +1,4 @@
-# bloodhound_api.py
+﻿# bloodhound_api.py
 import base64
 import datetime
 import hashlib
@@ -10,11 +10,14 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 
 import requests
-from dotenv import load_dotenv
+import urllib3
 
-# Load environment variables from .env file
-env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(dotenv_path=env_path)
+
+def _env_bool(name: str, default: bool = True) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in ("0", "false", "no", "off")
 
 
 class BloodhoundError(Exception):
@@ -69,7 +72,9 @@ class BloodhoundBaseClient:
         self.port = port or int(os.getenv("BLOODHOUND_PORT") or 443)
         self.token_id = token_id or os.getenv("BLOODHOUND_TOKEN_ID")
         self.token_key = token_key or os.getenv("BLOODHOUND_TOKEN_KEY")
-
+        self.verify_tls = _env_bool("BLOODHOUND_VERIFY_TLS", True)
+        if not self.verify_tls:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         # Validate required fields
         if not self.domain:
             raise BloodhoundAuthError(
@@ -144,6 +149,7 @@ class BloodhoundBaseClient:
                     "Content-Type": content_type,
                 },
                 data=body,
+                verify=self.verify_tls,
             )
         except requests.exceptions.ConnectionError as e:
             raise BloodhoundConnectionError(f"Failed to connect to BloodHound API: {e}")
@@ -258,9 +264,7 @@ class FileUploadClient:
         if size == 0:
             raise ValueError(f"File is empty: {path}")
         if size > self.MAX_FILE_SIZE:
-            raise ValueError(
-                f"File exceeds 500 MB limit: {size} bytes"
-            )
+            raise ValueError(f"File exceeds 500 MB limit: {size} bytes")
 
     def start_upload(self) -> int:
         """Start a new upload job. Returns the job ID."""
@@ -333,7 +337,7 @@ class BloodhoundAPI:
             domain: BloodHound CE/Enterprise domain (e.g. localhost or xyz.bloodhoundenterprise.io)
             token_id: API token ID
             token_key: API token key
-            port: API port 
+            port: API port
             scheme: URL scheme
         If domain, token_id, token_key, port or scheme are not provided, they will be loaded from
         environment variables: BLOODHOUND_DOMAIN, BLOODHOUND_TOKEN_ID, BLOODHOUND_TOKEN_KEY, BLOODHOUND_PORT, BLOODHOUND_SCHEME
@@ -2014,9 +2018,11 @@ class CypherClient:
             "has_match": "MATCH" in upper_query,
             "has_gui_incompatible_aggregation": bool(aggregation_functions),
             "aggregation_functions": aggregation_functions,
-            "estimated_complexity": "high"
-            if any(keyword in upper_query for keyword in ["*", "ALL", "COLLECT"])
-            else "medium",
+            "estimated_complexity": (
+                "high"
+                if any(keyword in upper_query for keyword in ["*", "ALL", "COLLECT"])
+                else "medium"
+            ),
         }
 
         return {
@@ -2024,16 +2030,20 @@ class CypherClient:
             "checks": basic_checks,
             "warnings": [
                 "Query appears empty" if basic_checks["is_empty"] else None,
-                "Query may have high complexity"
-                if basic_checks["estimated_complexity"] == "high"
-                else None,
                 (
-                    "COUNT/COLLECT/SUM/AVG/MIN/MAX aggregations are API-safe but "
-                    "may not render correctly in the BloodHound GUI; for GUI use, "
-                    "return individual nodes, edges, or paths."
-                )
-                if basic_checks["has_gui_incompatible_aggregation"]
-                else None,
+                    "Query may have high complexity"
+                    if basic_checks["estimated_complexity"] == "high"
+                    else None
+                ),
+                (
+                    (
+                        "COUNT/COLLECT/SUM/AVG/MIN/MAX aggregations are API-safe but "
+                        "may not render correctly in the BloodHound GUI; for GUI use, "
+                        "return individual nodes, edges, or paths."
+                    )
+                    if basic_checks["has_gui_incompatible_aggregation"]
+                    else None
+                ),
             ],
         }
 
@@ -2186,8 +2196,6 @@ class CypherClient:
         )
 
 
-
-
 class DataQualityClient:
     """Client for data quality related BloodHound API endpoints"""
 
@@ -2197,7 +2205,7 @@ class DataQualityClient:
     def get_completeness_stats(self) -> Dict[str, Any]:
         """
         Get database completeness stats
-        
+
         Returns:
             Dictionary with percentage of local admins and sessions collected
         """
@@ -2214,7 +2222,7 @@ class DataQualityClient:
     ) -> Dict[str, Any]:
         """
         Get AD domain data quality stats
-        
+
         Args:
             domain_id: Domain ID
             start: Beginning datetime in RFC-3339 format (inclusive)
@@ -2222,19 +2230,19 @@ class DataQualityClient:
             sort_by: Sort by field (created_at, updated_at)
             skip: Number of results to skip for pagination
             limit: Maximum number of results to return
-            
+
         Returns:
             Time series list of data quality stats for the domain
         """
         params = {"skip": skip, "limit": limit}
-        
+
         if start:
             params["start"] = start
         if end:
             params["end"] = end
         if sort_by:
             params["sort_by"] = sort_by
-            
+
         return self.base_client.request(
             "GET", f"/api/v2/ad-domains/{domain_id}/data-quality-stats", params=params
         )
@@ -2250,7 +2258,7 @@ class DataQualityClient:
     ) -> Dict[str, Any]:
         """
         Get Azure tenant data quality stats
-        
+
         Args:
             tenant_id: Tenant ID
             start: Beginning datetime in RFC-3339 format (inclusive)
@@ -2258,21 +2266,23 @@ class DataQualityClient:
             sort_by: Sort by field (created_at, updated_at)
             skip: Number of results to skip for pagination
             limit: Maximum number of results to return
-            
+
         Returns:
             Time series list of data quality stats for the tenant
         """
         params = {"skip": skip, "limit": limit}
-        
+
         if start:
             params["start"] = start
         if end:
             params["end"] = end
         if sort_by:
             params["sort_by"] = sort_by
-            
+
         return self.base_client.request(
-            "GET", f"/api/v2/azure-tenants/{tenant_id}/data-quality-stats", params=params
+            "GET",
+            f"/api/v2/azure-tenants/{tenant_id}/data-quality-stats",
+            params=params,
         )
 
     def get_platform_data_quality_stats(
@@ -2286,7 +2296,7 @@ class DataQualityClient:
     ) -> Dict[str, Any]:
         """
         Get platform data quality aggregate stats
-        
+
         Args:
             platform_id: Platform ID ("ad" or "azure")
             start: Beginning datetime in RFC-3339 format (inclusive)
@@ -2294,22 +2304,22 @@ class DataQualityClient:
             sort_by: Sort by field (created_at, updated_at)
             skip: Number of results to skip for pagination
             limit: Maximum number of results to return
-            
+
         Returns:
             Time series list of aggregate data quality stats for the platform
         """
         if platform_id not in ["ad", "azure"]:
             raise ValueError("platform_id must be 'ad' or 'azure'")
-            
+
         params = {"skip": skip, "limit": limit}
-        
+
         if start:
             params["start"] = start
         if end:
             params["end"] = end
         if sort_by:
             params["sort_by"] = sort_by
-            
+
         return self.base_client.request(
             "GET", f"/api/v2/platform/{platform_id}/data-quality-stats", params=params
         )
@@ -2324,7 +2334,7 @@ class CustomNodesClient:
     def get_all_custom_nodes(self) -> Dict[str, Any]:
         """
         Get all custom node configurations
-        
+
         Returns:
             List of all custom node configurations with display settings
         """
@@ -2333,26 +2343,28 @@ class CustomNodesClient:
     def get_custom_node(self, kind_name: str) -> Dict[str, Any]:
         """
         Get configuration for a specific custom node kind
-        
+
         Args:
             kind_name: The name of the custom node kind
-            
+
         Returns:
             Configuration for the specified custom node kind
         """
         return self.base_client.request("GET", f"/api/v2/custom-nodes/{kind_name}")
 
-    def create_custom_nodes(self, custom_types: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    def create_custom_nodes(
+        self, custom_types: Dict[str, Dict[str, Any]]
+    ) -> Dict[str, Any]:
         """
         Create new custom node kinds with display metadata
-        
+
         Args:
             custom_types: Dictionary mapping kind names to their configurations
                          Each configuration should have an 'icon' object with:
-                         - type: "font-awesome" 
+                         - type: "font-awesome"
                          - name: Icon name (without fa- prefix)
                          - color: Color in #RGB or #RRGGBB format
-                         
+
         Example:
             custom_types = {
                 "SQLServer": {
@@ -2363,7 +2375,7 @@ class CustomNodesClient:
                     }
                 }
             }
-            
+
         Returns:
             List of created custom node configurations
         """
@@ -2379,21 +2391,23 @@ class CustomNodesClient:
     ) -> Dict[str, Any]:
         """
         Update existing custom node kind with display metadata
-        
+
         Args:
             kind_name: The name of the custom node kind to update
             config: Configuration object with icon settings
-            
+
         Returns:
             Updated custom node configuration
         """
         data = {"config": config}
-        return self.base_client.request("PUT", f"/api/v2/custom-nodes/{kind_name}", data=data)
+        return self.base_client.request(
+            "PUT", f"/api/v2/custom-nodes/{kind_name}", data=data
+        )
 
     def delete_custom_node(self, kind_name: str) -> None:
         """
         Delete configuration for a specific custom node kind
-        
+
         Args:
             kind_name: The name of the custom node kind to delete
         """
@@ -2402,46 +2416,48 @@ class CustomNodesClient:
     def validate_icon_config(self, icon_config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Validate icon configuration for custom nodes
-        
+
         Args:
             icon_config: Icon configuration to validate
-            
+
         Returns:
             Validation results with any warnings or errors
         """
-        validation_result = {
-            "valid": True,
-            "warnings": [],
-            "errors": []
-        }
-        
+        validation_result = {"valid": True, "warnings": [], "errors": []}
+
         if not isinstance(icon_config, dict):
             validation_result["valid"] = False
             validation_result["errors"].append("Icon config must be a dictionary")
             return validation_result
-            
+
         # Check required fields
         if "type" not in icon_config:
             validation_result["errors"].append("Icon type is required")
         elif icon_config["type"] != "font-awesome":
-            validation_result["warnings"].append("Only 'font-awesome' type is officially supported")
-            
+            validation_result["warnings"].append(
+                "Only 'font-awesome' type is officially supported"
+            )
+
         if "name" not in icon_config:
             validation_result["errors"].append("Icon name is required")
         elif icon_config["name"].startswith("fa-"):
-            validation_result["warnings"].append("Icon name should not include 'fa-' prefix")
-            
+            validation_result["warnings"].append(
+                "Icon name should not include 'fa-' prefix"
+            )
+
         # Check color format
         if "color" in icon_config:
             color = icon_config["color"]
             if not color.startswith("#"):
                 validation_result["errors"].append("Color must start with #")
             elif len(color) not in [4, 7]:  # #RGB or #RRGGBB
-                validation_result["errors"].append("Color must be #RGB or #RRGGBB format")
-                
+                validation_result["errors"].append(
+                    "Color must be #RGB or #RRGGBB format"
+                )
+
         if validation_result["errors"]:
             validation_result["valid"] = False
-            
+
         return validation_result
 
 
@@ -2461,9 +2477,7 @@ class OpenGraphExtensionsClient:
 
     def delete_extension(self, extension_id: int) -> None:
         """Delete an OpenGraph extension by ID."""
-        self.base_client.raw_request(
-            "DELETE", f"/api/v2/extensions/{extension_id}"
-        )
+        self.base_client.raw_request("DELETE", f"/api/v2/extensions/{extension_id}")
 
     def list_edge_kinds(
         self,
@@ -2503,7 +2517,7 @@ class AssetGroupsClient:
     ) -> Dict[str, Any]:
         """
         List all asset isolation groups
-        
+
         Args:
             sort_by: Sort by field (name, tag, member_count)
             name: Filter by name
@@ -2514,12 +2528,12 @@ class AssetGroupsClient:
             created_at: Filter by creation date
             updated_at: Filter by update date
             deleted_at: Filter by deletion date
-            
+
         Returns:
             List of asset groups with their configurations
         """
         params = {}
-        
+
         if sort_by:
             params["sort_by"] = sort_by
         if name:
@@ -2538,17 +2552,17 @@ class AssetGroupsClient:
             params["updated_at"] = updated_at
         if deleted_at:
             params["deleted_at"] = deleted_at
-            
+
         return self.base_client.request("GET", "/api/v2/asset-groups", params=params)
 
     def create_asset_group(self, name: str, tag: str) -> Dict[str, Any]:
         """
         Create an asset group
-        
+
         Args:
             name: Name of the asset group
             tag: Tag for the asset group
-            
+
         Returns:
             Created asset group configuration
         """
@@ -2558,10 +2572,10 @@ class AssetGroupsClient:
     def get_asset_group(self, asset_group_id: int) -> Dict[str, Any]:
         """
         Get asset group by ID
-        
+
         Args:
             asset_group_id: ID of the asset group
-            
+
         Returns:
             Asset group configuration
         """
@@ -2570,21 +2584,23 @@ class AssetGroupsClient:
     def update_asset_group(self, asset_group_id: int, name: str) -> Dict[str, Any]:
         """
         Update an asset group
-        
+
         Args:
             asset_group_id: ID of the asset group to update
             name: New name for the asset group
-            
+
         Returns:
             Updated asset group configuration
         """
         data = {"name": name}
-        return self.base_client.request("PUT", f"/api/v2/asset-groups/{asset_group_id}", data=data)
+        return self.base_client.request(
+            "PUT", f"/api/v2/asset-groups/{asset_group_id}", data=data
+        )
 
     def delete_asset_group(self, asset_group_id: int) -> None:
         """
         Delete an asset group
-        
+
         Args:
             asset_group_id: ID of the asset group to delete
         """
@@ -2601,7 +2617,7 @@ class AssetGroupsClient:
     ) -> Dict[str, Any]:
         """
         List asset group collections
-        
+
         Args:
             asset_group_id: ID of the asset group
             sort_by: Sort by field
@@ -2609,12 +2625,12 @@ class AssetGroupsClient:
             created_at: Filter by creation date
             updated_at: Filter by update date
             deleted_at: Filter by deletion date
-            
+
         Returns:
             List of asset group collections (historical memberships)
         """
         params = {}
-        
+
         if sort_by:
             params["sort_by"] = sort_by
         if collection_id is not None:
@@ -2625,7 +2641,7 @@ class AssetGroupsClient:
             params["updated_at"] = updated_at
         if deleted_at:
             params["deleted_at"] = deleted_at
-            
+
         return self.base_client.request(
             "GET", f"/api/v2/asset-groups/{asset_group_id}/collections", params=params
         )
@@ -2635,11 +2651,11 @@ class AssetGroupsClient:
     ) -> Dict[str, Any]:
         """
         Update asset group selectors
-        
+
         Args:
             asset_group_id: ID of the asset group
             selectors: List of selector specifications
-            
+
         Returns:
             Updated asset group configuration
         """
@@ -2650,10 +2666,10 @@ class AssetGroupsClient:
     def list_asset_group_member_counts(self, asset_group_id: int) -> Dict[str, Any]:
         """
         List asset group member count by kind
-        
+
         Args:
             asset_group_id: ID of the asset group
-            
+
         Returns:
             Dictionary with total count and counts by kind
         """
@@ -2672,36 +2688,38 @@ class AssetGroupsClient:
     ) -> Dict[str, Any]:
         """
         List asset group tags
-        
+
         Args:
             sort_by: Sort by field
             name: Filter by name
             tag: Filter by tag
             skip: Number of results to skip
             limit: Maximum number of results
-            
+
         Returns:
             List of asset group tags
         """
         params = {"skip": skip, "limit": limit}
-        
+
         if sort_by:
             params["sort_by"] = sort_by
         if name:
             params["name"] = name
         if tag:
             params["tag"] = tag
-            
-        return self.base_client.request("GET", "/api/v2/asset-group-tags", params=params)
+
+        return self.base_client.request(
+            "GET", "/api/v2/asset-group-tags", params=params
+        )
 
     def create_asset_group_tag(self, name: str, tag: str) -> Dict[str, Any]:
         """
         Create asset group tag
-        
+
         Args:
             name: Name of the tag
             tag: Tag value
-            
+
         Returns:
             Created asset group tag
         """
@@ -2711,58 +2729,66 @@ class AssetGroupsClient:
     def get_asset_group_tag(self, asset_group_tag_id: int) -> Dict[str, Any]:
         """
         Get specific asset group tag by ID
-        
+
         Args:
             asset_group_tag_id: ID of the asset group tag
-            
+
         Returns:
             Asset group tag configuration
         """
-        return self.base_client.request("GET", f"/api/v2/asset-group-tags/{asset_group_tag_id}")
+        return self.base_client.request(
+            "GET", f"/api/v2/asset-group-tags/{asset_group_tag_id}"
+        )
 
     def update_asset_group_tag(
         self, asset_group_tag_id: int, name: str, tag: str
     ) -> Dict[str, Any]:
         """
         Update asset group tag
-        
+
         Args:
             asset_group_tag_id: ID of the asset group tag
             name: New name
             tag: New tag value
-            
+
         Returns:
             Updated asset group tag
         """
         data = {"name": name, "tag": tag}
-        return self.base_client.request("PUT", f"/api/v2/asset-group-tags/{asset_group_tag_id}", data=data)
+        return self.base_client.request(
+            "PUT", f"/api/v2/asset-group-tags/{asset_group_tag_id}", data=data
+        )
 
     def delete_asset_group_tag(self, asset_group_tag_id: int) -> None:
         """
         Delete asset group tag
-        
+
         Args:
             asset_group_tag_id: ID of the asset group tag to delete
         """
-        self.base_client.request("DELETE", f"/api/v2/asset-group-tags/{asset_group_tag_id}")
+        self.base_client.request(
+            "DELETE", f"/api/v2/asset-group-tags/{asset_group_tag_id}"
+        )
 
     def list_asset_group_tag_members(
         self, asset_group_tag_id: int, skip: int = 0, limit: int = 100
     ) -> Dict[str, Any]:
         """
         List asset group tag members
-        
+
         Args:
             asset_group_tag_id: ID of the asset group tag
             skip: Number of results to skip
             limit: Maximum number of results
-            
+
         Returns:
             List of members in the asset group tag
         """
         params = {"skip": skip, "limit": limit}
         return self.base_client.request(
-            "GET", f"/api/v2/asset-group-tags/{asset_group_tag_id}/members", params=params
+            "GET",
+            f"/api/v2/asset-group-tags/{asset_group_tag_id}/members",
+            params=params,
         )
 
     def list_asset_group_tag_selectors(
@@ -2770,18 +2796,20 @@ class AssetGroupsClient:
     ) -> Dict[str, Any]:
         """
         List asset group tag selectors
-        
+
         Args:
             asset_group_tag_id: ID of the asset group tag
             skip: Number of results to skip
             limit: Maximum number of results
-            
+
         Returns:
             List of selectors for the asset group tag
         """
         params = {"skip": skip, "limit": limit}
         return self.base_client.request(
-            "GET", f"/api/v2/asset-group-tags/{asset_group_tag_id}/selectors", params=params
+            "GET",
+            f"/api/v2/asset-group-tags/{asset_group_tag_id}/selectors",
+            params=params,
         )
 
     def create_asset_group_tag_selector(
@@ -2789,16 +2817,18 @@ class AssetGroupsClient:
     ) -> Dict[str, Any]:
         """
         Create asset group tag selector
-        
+
         Args:
             asset_group_tag_id: ID of the asset group tag
             selector_spec: Selector specification
-            
+
         Returns:
             Created selector configuration
         """
         return self.base_client.request(
-            "POST", f"/api/v2/asset-group-tags/{asset_group_tag_id}/selectors", data=selector_spec
+            "POST",
+            f"/api/v2/asset-group-tags/{asset_group_tag_id}/selectors",
+            data=selector_spec,
         )
 
     def get_asset_group_tag_selector(
@@ -2806,16 +2836,17 @@ class AssetGroupsClient:
     ) -> Dict[str, Any]:
         """
         Get specific asset group tag selector
-        
+
         Args:
             asset_group_tag_id: ID of the asset group tag
             selector_id: ID of the selector
-            
+
         Returns:
             Selector configuration
         """
         return self.base_client.request(
-            "GET", f"/api/v2/asset-group-tags/{asset_group_tag_id}/selectors/{selector_id}"
+            "GET",
+            f"/api/v2/asset-group-tags/{asset_group_tag_id}/selectors/{selector_id}",
         )
 
     def update_asset_group_tag_selector(
@@ -2823,17 +2854,19 @@ class AssetGroupsClient:
     ) -> Dict[str, Any]:
         """
         Update asset group tag selector
-        
+
         Args:
             asset_group_tag_id: ID of the asset group tag
             selector_id: ID of the selector to update
             selector_spec: Updated selector specification
-            
+
         Returns:
             Updated selector configuration
         """
         return self.base_client.request(
-            "PUT", f"/api/v2/asset-group-tags/{asset_group_tag_id}/selectors/{selector_id}", data=selector_spec
+            "PUT",
+            f"/api/v2/asset-group-tags/{asset_group_tag_id}/selectors/{selector_id}",
+            data=selector_spec,
         )
 
     def delete_asset_group_tag_selector(
@@ -2841,11 +2874,12 @@ class AssetGroupsClient:
     ) -> None:
         """
         Delete asset group tag selector
-        
+
         Args:
             asset_group_tag_id: ID of the asset group tag
             selector_id: ID of the selector to delete
         """
         self.base_client.request(
-            "DELETE", f"/api/v2/asset-group-tags/{asset_group_tag_id}/selectors/{selector_id}"
+            "DELETE",
+            f"/api/v2/asset-group-tags/{asset_group_tag_id}/selectors/{selector_id}",
         )

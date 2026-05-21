@@ -5,12 +5,9 @@ description = "MCP for Connecting Claude Desktop to Bloodhound CE"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "argparse>=1.4.0",
-    "dotenv>=0.9.9",
-    "fastmcp>=0.4.1",
-    "logging>=0.4.9.6",
+    "fastmcp>=3.3.1",
+    "python-dotenv>=1.1.1",
     "requests>=2.32.3",
-    "typing>=3.10.0.0",
 ]
 
 [dependency-groups]
@@ -22,3 +19,6 @@ dev = [
     "requests-mock>=1.12.1",
     "responses>=0.25.7",
 ]
+
+[tool.black]
+target-version = ["py311"]

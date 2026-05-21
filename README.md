@@ -80,7 +80,13 @@ cd bloodhound-mcp
 uv sync
 ```
 
-Create a `.env` file in the project root:
+Copy the example environment file and fill in your BloodHound API token:
+
+```bash
+cp .env.example .env
+```
+
+Required values:
 
 ```env
 BLOODHOUND_DOMAIN=your-bloodhound-instance.domain.com
@@ -93,6 +99,7 @@ The server defaults to `https` on port `443`. Override if needed:
 ```env
 BLOODHOUND_PORT=8080
 BLOODHOUND_SCHEME=http
+BLOODHOUND_VERIFY_TLS=true
 ```
 
 ---
@@ -162,6 +169,8 @@ BLOODHOUND_DOMAIN = "your-bloodhound-instance.domain.com"
 BLOODHOUND_TOKEN_ID = "your-token-id"
 BLOODHOUND_TOKEN_KEY = "your-token-key"
 ```
+
+The MCP server uses stdio by default, so it does not listen on a TCP port. `BLOODHOUND_PORT` is only the upstream BloodHound API port.
 
 ### MCP Inspector
 
@@ -245,7 +254,7 @@ Best practices:
 ## Testing
 
 ```bash
-# Full test suite (307 tests)
+# Full test suite
 uv run pytest
 
 # Specific modules
@@ -283,7 +292,7 @@ Contributions are welcome. Open an issue to discuss significant changes before s
 
 - **SpecterOps** for [BloodHound Community Edition](https://github.com/SpecterOps/BloodHound)
 - **Orange Cyberdefense** for [GOAD](https://github.com/Orange-Cyberdefense/GOAD) (used for testing)
-- **@jlowin** for [FastMCP](https://github.com/jlowin/fastmcp)
+- **@jlowin** for [FastMCP](https://gofastmcp.com)
 - **@xpn** for MCP inspiration via the Mythic MCP project
 
 ## License
