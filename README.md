@@ -2,11 +2,11 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-A Model Context Protocol (MCP) server that connects LLMs to BloodHound Community Edition. Ask questions in natural language, get attack path analysis, run Cypher queries, and explore Active Directory, Azure/Entra ID, and OpenGraph environments — all from your AI assistant.
+A Model Context Protocol (MCP) server that connects LLMs to BloodHound Community Edition and BloodHound Enterprise. Ask questions in natural language, get attack path analysis, run Cypher queries, and explore Active Directory, Azure/Entra ID, and OpenGraph environments — all from your AI assistant.
 
 ## Demo
 
-[Watch the demonstration video](https://youtu.be/eZBT0Iw9CMA) *(updated demo coming soon)*
+[Watch the demonstration video](https://youtu.be/eZBT0Iw9CMA) 
 
 ---
 
@@ -170,7 +170,7 @@ BLOODHOUND_TOKEN_KEY = "your-token-key"
 
 ### BloodHound API Token
 
-1. Log into BloodHound CE
+1. Log into BloodHound CE or BloodHound Enterprise
 2. Navigate to **Administration** → **API Tokens**
 3. Create a new token and copy the Token ID and Token Key into your `.env`
 
@@ -220,7 +220,7 @@ The `custom_nodes` tool handles legacy CRUD operations on node type display conf
 
 Use the `bloodhound://opengraph/guide` and `bloodhound://opengraph/examples` resources for schema design and Cypher patterns. For structured OpenGraph schemas, upsert the extension schema first, then ingest collection data with `file_upload`.
 
-> Requires BloodHound CE 8.0 or later.
+> Requires BloodHound Enterprise or BloodHound CE 8.0 or later.
 > OpenGraph extension management requires BloodHound 9.0.0+ and the corresponding feature flag to be enabled.
 
 ---
