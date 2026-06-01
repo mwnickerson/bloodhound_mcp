@@ -6,6 +6,8 @@ v2.0
 Trying to be more token iffecient
 """
 
+import base64
+import binascii
 import json
 import logging
 import re
@@ -87,7 +89,8 @@ def bloodhound_assistant() -> str:
     2. Use composite tools to drill into specific objects or request all information about the object
     3. Use cypher_query(info_type="run") for advanced cross-domain analysis
     4. Use custom_nodes to manage legacy OpenGraph custom node display configs and BloodHound v9 extension schemas
-    5. Use file_upload(info_type="upload", file_path="...") to ingest SharpHound/AzureHound collection data (.zip or .json)
+    5. Use file_upload(info_type="upload", file_path="...") to ingest SharpHound/AzureHound collection data (.zip or .json).
+       If an agent already has collection bytes in memory, base64-encode them and use file_upload(info_type="upload_bytes", file_name="collection.zip", file_bytes_base64="...").
     6. For Azure: prefer Cypher queries over REST API tools
     7. For OpenGraph: prompt the user for OpenGraph schema and example queries, then use these to create Cypher queries
 
@@ -1263,17 +1266,28 @@ def _upload_to_job(job_id: int, file_path: str) -> dict:
     """Helper for multi-file upload: validate, detect content type, upload to existing job."""
     path = Path(file_path)
     bloodhound_api.file_upload._validate_file(path)
-    content_type = (
-        "application/zip" if path.suffix.lower() == ".zip" else "application/json"
-    )
+    content_type = bloodhound_api.file_upload._content_type_for_name(path.name)
     file_data = path.read_bytes()
-    bloodhound_api.file_upload.upload_file(job_id, file_data, content_type)
+    bloodhound_api.file_upload.upload_file(
+        job_id, file_data, content_type, file_name=path.name
+    )
     return {
         "job_id": job_id,
         "file_name": path.name,
         "file_size_bytes": len(file_data),
+        "content_type": content_type,
         "status": "uploaded",
     }
+
+
+def _decode_file_bytes_base64(file_bytes_base64: str) -> bytes:
+    """Decode MCP-safe base64 collection bytes into the raw upload body."""
+    if file_bytes_base64 is None:
+        raise ValueError("file_bytes_base64 is required")
+    try:
+        return base64.b64decode(file_bytes_base64, validate=True)
+    except (binascii.Error, ValueError) as e:
+        raise ValueError("Invalid base64 in file_bytes_base64") from e
 
 
 @mcp.tool()
@@ -1281,33 +1295,54 @@ def file_upload(
     info_type: str = "upload",
     file_path: str = None,
     job_id: int = None,
+    file_name: str = None,
+    file_bytes_base64: str = None,
+    content_type: str = None,
 ) -> str:
     """Upload SharpHound/AzureHound collection files to BloodHound CE for ingest.
     Accepts .zip (SharpHound ZIP archive) or .json (individual collection file).
+    Files can be provided by path or as base64-encoded in-memory bytes.
 
     info_type options:
         upload        - full workflow for a single file: start -> upload -> end
                         (requires: file_path)
         start_job     - start a new upload job, returns job_id for multi-file uploads
         upload_to_job - upload a file to an existing job (requires: job_id, file_path)
+        upload_bytes  - full workflow for base64 file bytes: start -> upload -> end
+                        (requires: file_name, file_bytes_base64)
+        upload_bytes_to_job - upload base64 file bytes to an existing job
+                              (requires: job_id, file_name, file_bytes_base64)
         end_job       - finalize an upload job and trigger ingest (requires: job_id)
 
     Args:
         info_type: operation to perform (default: upload)
         file_path: absolute path to collection file (.zip or .json)
         job_id: upload job ID (required for upload_to_job and end_job)
+        file_name: collection file name for byte upload modes (.zip or .json)
+        file_bytes_base64: base64-encoded collection bytes for byte upload modes
+        content_type: optional override for byte upload content type
     """
     handlers = {
         "upload": lambda: bloodhound_api.file_upload.upload_collection_file(file_path),
         "start_job": lambda: {"job_id": bloodhound_api.file_upload.start_upload()},
         "upload_to_job": lambda: _upload_to_job(job_id, file_path),
+        "upload_bytes": lambda: bloodhound_api.file_upload.upload_collection_bytes(
+            _decode_file_bytes_base64(file_bytes_base64),
+            file_name,
+            content_type=content_type,
+        ),
+        "upload_bytes_to_job": lambda: bloodhound_api.file_upload.upload_bytes_to_job(
+            job_id,
+            _decode_file_bytes_base64(file_bytes_base64),
+            file_name,
+            content_type=content_type,
+        ),
         "end_job": lambda: (
             bloodhound_api.file_upload.end_upload(job_id)
             or {"status": "ingest_started", "job_id": job_id}
         ),
     }
     return _handle_tool_call(info_type, handlers)
-
 
 # MCP Resources
 # These are called by the main prompt

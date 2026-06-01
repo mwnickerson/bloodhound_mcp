@@ -26,9 +26,9 @@ htmlcov/
 .claude/
 .claude_checkpoint.md
 archive/
+examples/phase4-v1.zip
 # mac files
 .DS_Store
 .AppleDouble
 .LSOverride
 Icon
-

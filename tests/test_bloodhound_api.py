@@ -1943,6 +1943,22 @@ class TestRawRequest:
             _, kwargs = mock_req.call_args
             assert kwargs["headers"]["Content-Type"] == "application/zip"
 
+    def test_raw_request_sends_extra_headers(self):
+        with patch("requests.request") as mock_req:
+            mock_response = Mock()
+            mock_response.status_code = 202
+            mock_req.return_value = mock_response
+            self.client.raw_request(
+                "POST",
+                "/api/v2/file-upload/1",
+                body=b"zipdata",
+                content_type="application/zip",
+                extra_headers={"X-File-Upload-Name": "sharphound.zip"},
+            )
+            _, kwargs = mock_req.call_args
+            assert kwargs["headers"]["Content-Type"] == "application/zip"
+            assert kwargs["headers"]["X-File-Upload-Name"] == "sharphound.zip"
+
     def test_raw_request_default_content_type_is_json(self):
         with patch("requests.request") as mock_req:
             mock_response = Mock()
@@ -1993,14 +2009,26 @@ class TestFileUploadClient:
         self.client.upload_file(42, b"zipdata", "application/zip")
         self.mock_base.raw_request.assert_called_once_with(
             "POST", "/api/v2/file-upload/42",
-            body=b"zipdata", content_type="application/zip"
+            body=b"zipdata", content_type="application/zip", extra_headers=None
         )
 
     def test_upload_file_json(self):
         self.client.upload_file(7, b"{}", "application/json")
         self.mock_base.raw_request.assert_called_once_with(
             "POST", "/api/v2/file-upload/7",
-            body=b"{}", content_type="application/json"
+            body=b"{}", content_type="application/json", extra_headers=None
+        )
+
+    def test_upload_file_includes_upload_name_header(self):
+        self.client.upload_file(
+            42, b"zipdata", "application/zip", file_name="sharphound.zip"
+        )
+        self.mock_base.raw_request.assert_called_once_with(
+            "POST",
+            "/api/v2/file-upload/42",
+            body=b"zipdata",
+            content_type="application/zip",
+            extra_headers={"X-File-Upload-Name": "sharphound.zip"},
         )
 
     def test_end_upload(self):
@@ -2034,6 +2062,10 @@ class TestFileUploadClient:
         assert result["status"] == "upload_complete"
         assert self.mock_base.request.call_count == 1  # start
         assert self.mock_base.raw_request.call_count == 2  # upload + end
+        upload_call = self.mock_base.raw_request.call_args_list[0]
+        assert upload_call.kwargs["extra_headers"] == {
+            "X-File-Upload-Name": "sharphound.zip"
+        }
 
     def test_upload_collection_file_json(self, tmp_path):
         json_file = tmp_path / "users.json"
@@ -2072,6 +2104,81 @@ class TestFileUploadClient:
                 self.client._validate_file(big_file)
         finally:
             FileUploadClient.MAX_FILE_SIZE = original
+
+    def test_upload_collection_bytes_zip(self):
+        self.mock_base.request.return_value = {"data": {"id": 99}}
+
+        result = self.client.upload_collection_bytes(
+            b"PK\x03\x04fakezip", "sharphound.zip"
+        )
+
+        assert result == {
+            "job_id": 99,
+            "file_name": "sharphound.zip",
+            "file_size_bytes": 11,
+            "content_type": "application/zip",
+            "status": "upload_complete",
+        }
+        self.mock_base.request.assert_called_once_with(
+            "POST", "/api/v2/file-upload/start"
+        )
+        self.mock_base.raw_request.assert_any_call(
+            "POST",
+            "/api/v2/file-upload/99",
+            body=b"PK\x03\x04fakezip",
+            content_type="application/zip",
+            extra_headers={"X-File-Upload-Name": "sharphound.zip"},
+        )
+        self.mock_base.raw_request.assert_any_call(
+            "POST", "/api/v2/file-upload/99/end"
+        )
+
+    def test_upload_bytes_to_job(self):
+        result = self.client.upload_bytes_to_job(
+            7, b'{"data":[]}', "users.json"
+        )
+
+        assert result == {
+            "job_id": 7,
+            "file_name": "users.json",
+            "file_size_bytes": 11,
+            "content_type": "application/json",
+            "status": "uploaded",
+        }
+        self.mock_base.raw_request.assert_called_once_with(
+            "POST",
+            "/api/v2/file-upload/7",
+            body=b'{"data":[]}',
+            content_type="application/json",
+            extra_headers={"X-File-Upload-Name": "users.json"},
+        )
+
+    def test_upload_collection_bytes_accepts_zip_compressed_content_type(self):
+        self.mock_base.request.return_value = {"data": {"id": 99}}
+
+        result = self.client.upload_collection_bytes(
+            b"zipdata", "sharphound.zip", content_type="application/x-zip-compressed"
+        )
+
+        assert result["content_type"] == "application/x-zip-compressed"
+
+    def test_upload_collection_bytes_rejects_missing_name(self):
+        with pytest.raises(ValueError, match="file_name is required"):
+            self.client.upload_collection_bytes(b"zipdata", "")
+
+    def test_upload_collection_bytes_rejects_wrong_extension(self):
+        with pytest.raises(ValueError, match="Invalid file type"):
+            self.client.upload_collection_bytes(b"zipdata", "sharphound.txt")
+
+    def test_upload_collection_bytes_rejects_empty_payload(self):
+        with pytest.raises(ValueError, match="empty"):
+            self.client.upload_collection_bytes(b"", "sharphound.zip")
+
+    def test_upload_collection_bytes_rejects_mismatched_content_type(self):
+        with pytest.raises(ValueError, match="Invalid content type"):
+            self.client.upload_collection_bytes(
+                b"zipdata", "sharphound.zip", content_type="application/json"
+            )
 
 
 class TestCustomNodesClient:

@@ -98,6 +98,7 @@ class BloodhoundBaseClient:
         uri: str,
         body: Optional[bytes] = None,
         content_type: str = "application/json",
+        extra_headers: Optional[Dict[str, str]] = None,
     ) -> requests.Response:
         """
         Make a signed request to the BloodHound API
@@ -131,18 +132,22 @@ class BloodhoundBaseClient:
         if body is not None:
             digester.update(body)
 
+        headers = {
+            "User-Agent": "bloodhound-api-client 0.1",
+            "Authorization": f"bhesignature {self.token_id}",
+            "RequestDate": datetime_formatted,
+            "Signature": base64.b64encode(digester.digest()),
+            "Content-Type": content_type,
+        }
+        if extra_headers:
+            headers.update(extra_headers)
+
         # Make the request with signed headers
         try:
             return requests.request(
                 method=method,
                 url=self._format_url(uri),
-                headers={
-                    "User-Agent": "bloodhound-api-client 0.1",
-                    "Authorization": f"bhesignature {self.token_id}",
-                    "RequestDate": datetime_formatted,
-                    "Signature": base64.b64encode(digester.digest()),
-                    "Content-Type": content_type,
-                },
+                headers=headers,
                 data=body,
             )
         except requests.exceptions.ConnectionError as e:
@@ -202,6 +207,7 @@ class BloodhoundBaseClient:
         body: Optional[bytes] = None,
         content_type: str = "application/json",
         params: Optional[Dict[str, Any]] = None,
+        extra_headers: Optional[Dict[str, str]] = None,
     ) -> requests.Response:
         """
         Make a raw API request, returning the response without JSON decoding.
@@ -220,7 +226,13 @@ class BloodhoundBaseClient:
         if params:
             uri = f"{uri}?{urlencode(params, doseq=True)}"
 
-        response = self._request(method, uri, body, content_type=content_type)
+        response = self._request(
+            method,
+            uri,
+            body,
+            content_type=content_type,
+            extra_headers=extra_headers,
+        )
 
         try:
             response.raise_for_status()
@@ -241,6 +253,14 @@ class FileUploadClient:
 
     MAX_FILE_SIZE = 500 * 1024 * 1024  # 500 MB
     VALID_EXTENSIONS = {".zip", ".json"}
+    EXTENSION_CONTENT_TYPES = {
+        ".zip": {
+            "application/zip",
+            "application/zip-compressed",
+            "application/x-zip-compressed",
+        },
+        ".json": {"application/json"},
+    }
 
     def __init__(self, base_client: BloodhoundBaseClient):
         self.base_client = base_client
@@ -262,18 +282,64 @@ class FileUploadClient:
                 f"File exceeds 500 MB limit: {size} bytes"
             )
 
+    def _normalize_file_name(self, file_name: str) -> str:
+        if not file_name:
+            raise ValueError("file_name is required")
+        normalized = Path(file_name).name
+        if not normalized:
+            raise ValueError("file_name is required")
+        return normalized
+
+    def _content_type_for_name(
+        self, file_name: str, content_type: Optional[str] = None
+    ) -> str:
+        suffix = Path(file_name).suffix.lower()
+        if suffix not in self.VALID_EXTENSIONS:
+            raise ValueError(
+                f"Invalid file type '{suffix}'. Must be .zip or .json"
+            )
+
+        if content_type:
+            if content_type not in self.EXTENSION_CONTENT_TYPES[suffix]:
+                valid = ", ".join(sorted(self.EXTENSION_CONTENT_TYPES[suffix]))
+                raise ValueError(
+                    f"Invalid content type '{content_type}' for {suffix}. "
+                    f"Valid options: {valid}"
+                )
+            return content_type
+
+        return "application/zip" if suffix == ".zip" else "application/json"
+
+    def _validate_file_bytes(self, file_data: bytes, file_name: str) -> None:
+        if not file_data:
+            raise ValueError(f"File is empty: {file_name}")
+        if len(file_data) > self.MAX_FILE_SIZE:
+            raise ValueError(
+                f"File exceeds 500 MB limit: {len(file_data)} bytes"
+            )
+
     def start_upload(self) -> int:
         """Start a new upload job. Returns the job ID."""
         response = self.base_client.request("POST", "/api/v2/file-upload/start")
         return response["data"]["id"]
 
-    def upload_file(self, job_id: int, file_data: bytes, content_type: str) -> None:
+    def upload_file(
+        self,
+        job_id: int,
+        file_data: bytes,
+        content_type: str,
+        file_name: Optional[str] = None,
+    ) -> None:
         """Upload raw file bytes to an existing upload job."""
+        extra_headers = None
+        if file_name:
+            extra_headers = {"X-File-Upload-Name": file_name}
         self.base_client.raw_request(
             "POST",
             f"/api/v2/file-upload/{job_id}",
             body=file_data,
             content_type=content_type,
+            extra_headers=extra_headers,
         )
 
     def end_upload(self, job_id: int) -> None:
@@ -293,13 +359,11 @@ class FileUploadClient:
         path = Path(file_path)
         self._validate_file(path)
 
-        content_type = (
-            "application/zip" if path.suffix.lower() == ".zip" else "application/json"
-        )
+        content_type = self._content_type_for_name(path.name)
         file_data = path.read_bytes()
 
         job_id = self.start_upload()
-        self.upload_file(job_id, file_data, content_type)
+        self.upload_file(job_id, file_data, content_type, file_name=path.name)
         self.end_upload(job_id)
 
         return {
@@ -308,6 +372,64 @@ class FileUploadClient:
             "file_size_bytes": len(file_data),
             "content_type": content_type,
             "status": "upload_complete",
+        }
+
+    def upload_collection_bytes(
+        self,
+        file_data: bytes,
+        file_name: str,
+        content_type: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Full upload workflow for in-memory collection bytes."""
+        normalized_name = self._normalize_file_name(file_name)
+        resolved_content_type = self._content_type_for_name(
+            normalized_name, content_type
+        )
+        self._validate_file_bytes(file_data, normalized_name)
+
+        job_id = self.start_upload()
+        self.upload_file(
+            job_id,
+            file_data,
+            resolved_content_type,
+            file_name=normalized_name,
+        )
+        self.end_upload(job_id)
+
+        return {
+            "job_id": job_id,
+            "file_name": normalized_name,
+            "file_size_bytes": len(file_data),
+            "content_type": resolved_content_type,
+            "status": "upload_complete",
+        }
+
+    def upload_bytes_to_job(
+        self,
+        job_id: int,
+        file_data: bytes,
+        file_name: str,
+        content_type: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Upload in-memory collection bytes to an existing upload job."""
+        normalized_name = self._normalize_file_name(file_name)
+        resolved_content_type = self._content_type_for_name(
+            normalized_name, content_type
+        )
+        self._validate_file_bytes(file_data, normalized_name)
+        self.upload_file(
+            job_id,
+            file_data,
+            resolved_content_type,
+            file_name=normalized_name,
+        )
+
+        return {
+            "job_id": job_id,
+            "file_name": normalized_name,
+            "file_size_bytes": len(file_data),
+            "content_type": resolved_content_type,
+            "status": "uploaded",
         }
 
 
