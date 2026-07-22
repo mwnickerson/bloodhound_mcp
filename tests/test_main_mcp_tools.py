@@ -776,6 +776,23 @@ class TestAdcsInfo:
 # ---------------------------------------------------------------------------
 
 
+class TestPromptResources:
+    def test_bloodhound_assistant_points_to_current_edge_guidance(self):
+        prompt = main.bloodhound_assistant()
+        assert "TrustedBy" not in prompt
+        assert "bloodhound://cypher/offensive-queries" in prompt
+        assert "bloodhound://cypher/reference" in prompt
+
+    def test_offensive_query_library_uses_current_edge_names(self):
+        text = main.offensive_query_library()
+        assert "TrustedBy" not in text
+        assert "SameForestTrust" in text
+        assert "GetChangesInFilteredSet" in text
+        assert "OwnsLimitedRights" in text
+        assert "WriteOwnerLimitedRights" in text
+        assert "ClaimSpecialIdentity" in text
+
+
 class TestCypherQuery:
     @patch("main.bloodhound_api")
     def test_run_success_with_nodes(self, api):
