@@ -113,6 +113,8 @@ def bloodhound_assistant() -> str:
     10. COUNT, COLLECT, SUM, AVG, MIN, and MAX are API-safe but not BloodHound GUI-safe.
         Use them with cypher_query(info_type="run") when you need aggregation. When giving the
         user a query to paste into the GUI, return individual nodes, edges, or paths instead.
+    11. SameForestTrust and CrossForestTrust are structural and non-traversable. Use
+        SpoofSIDHistory or AbuseTGTDelegation when querying traversable trust abuse paths.
 
     ## Resources
     Quick reference (load as needed):
@@ -1475,7 +1477,8 @@ def cypher_reference() -> str:
     - WriteAccountRestrictions: Write userAccountControl / msDS-AllowedToActOnBehalfOfOtherIdentity
     - GPLink: GPO linked to OU/Container (direction: GPO -> container)
     - Contains: OU/container membership
-    - TrustedBy: Domain trust
+    - SameForestTrust / CrossForestTrust: Structural domain trusts (non-traversable)
+    - SpoofSIDHistory / AbuseTGTDelegation: Traversable domain trust abuse
     - CoerceToTGT: Kerberos coercion to TGT
     - AddAllowedToAct: Write RBCD
     - WriteGPLink: Write GPLink attribute
@@ -1538,7 +1541,7 @@ def cypher_reference() -> str:
     RETURN u
 
     Find paths from owned principals to high-value targets:
-    MATCH p=shortestPath((s:Base)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|Contains|DCFor|TrustedBy*1..]->(t:Base))
+    MATCH p=shortestPath((s:Base)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|Contains|DCFor|SpoofSIDHistory|AbuseTGTDelegation*1..]->(t:Base))
     WHERE COALESCE(s.system_tags, '') CONTAINS 'owned' AND s<>t
     RETURN p
 
@@ -1584,6 +1587,8 @@ def ad_guide() -> str:
     Remote:       CanRDP, CanPSRemote, ExecuteDCOM, SQLAdmin
     Delegation:   AllowedToDelegate, AllowedToAct, CoerceToTGT
     Modification: ForceChangePassword, AddMember, WriteSPN, AddKeyCredentialLink
+    Trust graph:  SameForestTrust, CrossForestTrust (structural, non-traversable)
+    Trust abuse:  SpoofSIDHistory, AbuseTGTDelegation (traversable)
 
     Tool Workflow
     -------------
@@ -1787,8 +1792,9 @@ def ad_methodology() -> str:
     SID History:
     MATCH p=(n)-[:HasSIDHistory]->(t) RETURN p
 
-    Cross-Domain Trust Exploitation:
-    MATCH p=(d1:Domain)-[:TrustedBy]->(d2:Domain) RETURN p
+    Cross-Domain Trust Analysis:
+    MATCH p=(d1:Domain)-[:SameForestTrust|CrossForestTrust]->(d2:Domain) RETURN p
+    MATCH p=(d1:Domain)-[:SpoofSIDHistory|AbuseTGTDelegation]->(d2:Domain) RETURN p
     domain_info(info_type="inbound_trusts") / domain_info(info_type="outbound_trusts")
 
     NTLM Relay Paths:
@@ -2453,7 +2459,7 @@ def offensive_query_library() -> str:
     == Domain Trusts ==
 
     All outbound trusts (this domain trusts these):
-    MATCH (d:Domain)-[:TrustedBy]->(t:Domain)
+    MATCH (d:Domain)-[:SameForestTrust|CrossForestTrust]->(t:Domain)
     WHERE d.name = 'DOMAIN.LOCAL'
     RETURN d.name AS source_domain, t.name AS trusted_domain
 
@@ -2508,7 +2514,7 @@ def offensive_query_library() -> str:
     == Attack Paths from Owned Nodes ==
 
     Shortest paths from all owned principals to any tier-zero/high-value targets:
-    MATCH p=shortestPath((s:Base)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|Contains|DCFor|TrustedBy*1..]->(t:Base))
+    MATCH p=shortestPath((s:Base)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|Contains|DCFor|SpoofSIDHistory|AbuseTGTDelegation*1..]->(t:Base))
     WHERE COALESCE(s.system_tags, '') CONTAINS 'owned'
     AND COALESCE(t.system_tags, '') CONTAINS 'tier zero'
     AND s <> t

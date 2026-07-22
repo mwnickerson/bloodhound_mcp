@@ -225,6 +225,20 @@ Use the `bloodhound://opengraph/guide` and `bloodhound://opengraph/examples` res
 
 ---
 
+## BloodHound Trust Edge Compatibility
+
+BloodHound v7.4 replaced the legacy `TrustedBy` edge. MCP resources and query
+examples use the current schema:
+
+- `SameForestTrust` and `CrossForestTrust` for structural domain trust inventory.
+- `SpoofSIDHistory` and `AbuseTGTDelegation` for traversable trust abuse paths.
+
+Do not add structural trust edges to attack-path allowlists. See the official
+[SpecterOps v7.4 release notes](https://bloodhound.specterops.io/resources/release-notes/v7-4-0)
+and [SameForestTrust edge reference](https://bloodhound.specterops.io/resources/edges/same-forest-trust).
+
+---
+
 ## Security Considerations
 
 BloodHound data processed through this tool is transmitted to your LLM provider's servers. **Do not use this with production AD data unless you have assessed that risk.**

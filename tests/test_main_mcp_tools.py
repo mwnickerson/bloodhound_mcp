@@ -1661,3 +1661,45 @@ class TestFileUpload:
             result = main.file_upload(info_type="upload", file_path=str(zip_file))
         assert isinstance(result, str)
         json.loads(result)
+
+
+class TestTrustEdgeSchema:
+    """Resource guidance must match the BloodHound 7.4+ trust schema."""
+
+    def test_resources_do_not_reference_removed_trusted_by_edge(self):
+        resources = (
+            main.bloodhound_assistant(),
+            main.cypher_reference(),
+            main.ad_guide(),
+            main.ad_methodology(),
+            main.offensive_query_library(),
+        )
+
+        assert all("TrustedBy" not in resource for resource in resources)
+
+    def test_structural_and_traversable_trust_edges_are_distinct(self):
+        prompt = main.bloodhound_assistant()
+        reference = main.cypher_reference()
+        guide = main.ad_guide()
+        methodology = main.ad_methodology()
+        queries = main.offensive_query_library()
+
+        assert "SameForestTrust and CrossForestTrust are structural" in prompt
+        assert "SameForestTrust / CrossForestTrust" in reference
+        assert "Trust graph:  SameForestTrust, CrossForestTrust" in guide
+        assert "Trust abuse:  SpoofSIDHistory, AbuseTGTDelegation" in guide
+        assert "SpoofSIDHistory / AbuseTGTDelegation" in reference
+        assert "[:SameForestTrust|CrossForestTrust]" in methodology
+        assert "[:SpoofSIDHistory|AbuseTGTDelegation]" in methodology
+        assert "[:SameForestTrust|CrossForestTrust]" in queries
+
+    def test_shortest_path_allowlists_use_traversable_trust_abuse_edges(self):
+        for resource in (main.cypher_reference(), main.offensive_query_library()):
+            shortest_path = next(
+                line
+                for line in resource.splitlines()
+                if "MATCH p=shortestPath((s:Base)" in line
+            )
+            assert "SpoofSIDHistory|AbuseTGTDelegation" in shortest_path
+            assert "SameForestTrust" not in shortest_path
+            assert "CrossForestTrust" not in shortest_path
