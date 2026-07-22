@@ -1,0 +1,1 @@
+Compatibility contract captured before dependency or TLS changes. This commit verifies the current FastMCP 2.x import path, eager API initialization, and unchanged requests call shape when no new setting is configured. Tests: uv run pytest tests/test_main_mcp_tools.py tests/test_bloodhound_http.py -q (179 passed).
