@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server that connects LLMs to BloodHound Community
 
 ## Demo
 
-[Watch the demonstration video](https://youtu.be/eZBT0Iw9CMA) 
+[Watch the demonstration video](https://youtu.be/eZBT0Iw9CMA)
 
 ---
 
@@ -93,6 +93,12 @@ The server defaults to `https` on port `443`. Override if needed:
 ```env
 BLOODHOUND_PORT=8080
 BLOODHOUND_SCHEME=http
+```
+
+Allow untrusted (self-signed, unknown) TLS certificates:
+
+```env
+BLOODHOUND_VERIFYTLS=false
 ```
 
 ---
