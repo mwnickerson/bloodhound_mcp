@@ -1,0 +1,29 @@
+BloodHound trust-edge schema compatibility fix
+
+Why this change is required:
+- SpecterOps BloodHound v7.4 removed the legacy TrustedBy edge.
+- Current structural trust edges are SameForestTrust and CrossForestTrust.
+- Structural trust edges are non-traversable and must not be treated as attack-path hops.
+- Traversable trust abuse is represented by SpoofSIDHistory and AbuseTGTDelegation.
+- The target ORI environment runs BloodHound CE 9.1.0, so TrustedBy queries return no current trust relationships.
+
+Implementation:
+- Updated bloodhound://cypher/reference relationship guidance.
+- Updated bloodhound://guides/ad and bloodhound://guides/ad-methodology.
+- Updated bloodhound://cypher/offensive-queries.
+- Updated the bloodhound_assistant system prompt.
+- Structural inventory queries now use SameForestTrust|CrossForestTrust.
+- Shortest-path allowlists now use SpoofSIDHistory|AbuseTGTDelegation.
+- Added README compatibility guidance with official SpecterOps references.
+- Added regression tests covering every affected resource and prompt surface.
+
+Validation:
+- Focused suite: 169 passed.
+- Full suite: 350 passed, 11 skipped.
+- git diff --check passed.
+- No live BloodHound writes or uploads were performed.
+
+Source documentation:
+- https://bloodhound.specterops.io/resources/release-notes/v7-4-0
+- https://bloodhound.specterops.io/resources/edges/same-forest-trust
+- https://bloodhound.specterops.io/resources/release-notes/2026-05-06
