@@ -26,7 +26,12 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
 import main
-from lib.bloodhound_api import BloodhoundAPIError, BloodhoundConnectionError
+from lib.bloodhound_api import (
+    BloodhoundAPI,
+    BloodhoundAPIError,
+    BloodhoundConnectionError,
+)
+from mcp.server.fastmcp import FastMCP
 
 
 # ---------------------------------------------------------------------------
@@ -42,6 +47,12 @@ GPO_ID = "5E6F7A8B-1234-5678-ABCD-1234567890AB"
 TEMPLATE_ID = "9C0D1E2F-1234-5678-ABCD-1234567890AB"
 CA_ID = "3A4B5C6D-1234-5678-ABCD-1234567890AB"
 QUERY_ID = "42"
+
+
+class TestRuntimeCompatibility:
+    def test_existing_fastmcp_import_and_eager_api_initialization(self):
+        assert isinstance(main.mcp, FastMCP)
+        assert isinstance(main.bloodhound_api, BloodhoundAPI)
 
 
 def make_api_error(status_code: int) -> BloodhoundAPIError:
@@ -774,6 +785,23 @@ class TestAdcsInfo:
 # ---------------------------------------------------------------------------
 # cypher_query
 # ---------------------------------------------------------------------------
+
+
+class TestPromptResources:
+    def test_bloodhound_assistant_points_to_current_edge_guidance(self):
+        prompt = main.bloodhound_assistant()
+        assert "TrustedBy" not in prompt
+        assert "bloodhound://cypher/offensive-queries" in prompt
+        assert "bloodhound://cypher/reference" in prompt
+
+    def test_offensive_query_library_uses_current_edge_names(self):
+        text = main.offensive_query_library()
+        assert "TrustedBy" not in text
+        assert "SameForestTrust" in text
+        assert "GetChangesInFilteredSet" in text
+        assert "OwnsLimitedRights" in text
+        assert "WriteOwnerLimitedRights" in text
+        assert "ClaimSpecialIdentity" in text
 
 
 class TestCypherQuery:
