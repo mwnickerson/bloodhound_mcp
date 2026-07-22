@@ -1,0 +1,1 @@
+Dependency hygiene checkpoint. Removed argparse, logging, typing, and dotenv from the manifest and lock. Direct dependencies remain fastmcp 2.9.2, python-dotenv 1.1.1, and requests 2.32.4. Lock audit found only pypi.org registry sources plus the local project; retained versions and hashes are unchanged. Tests: uv run pytest -q (350 passed, 11 integration tests skipped).
