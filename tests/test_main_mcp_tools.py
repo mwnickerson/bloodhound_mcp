@@ -26,7 +26,12 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
 import main
-from lib.bloodhound_api import BloodhoundAPIError, BloodhoundConnectionError
+from lib.bloodhound_api import (
+    BloodhoundAPI,
+    BloodhoundAPIError,
+    BloodhoundConnectionError,
+)
+from mcp.server.fastmcp import FastMCP
 
 
 # ---------------------------------------------------------------------------
@@ -42,6 +47,12 @@ GPO_ID = "5E6F7A8B-1234-5678-ABCD-1234567890AB"
 TEMPLATE_ID = "9C0D1E2F-1234-5678-ABCD-1234567890AB"
 CA_ID = "3A4B5C6D-1234-5678-ABCD-1234567890AB"
 QUERY_ID = "42"
+
+
+class TestRuntimeCompatibility:
+    def test_existing_fastmcp_import_and_eager_api_initialization(self):
+        assert isinstance(main.mcp, FastMCP)
+        assert isinstance(main.bloodhound_api, BloodhoundAPI)
 
 
 def make_api_error(status_code: int) -> BloodhoundAPIError:

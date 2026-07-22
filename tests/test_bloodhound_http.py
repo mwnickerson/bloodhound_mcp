@@ -66,6 +66,9 @@ class TestHTTPRequestFormation:
         assert "Signature" in headers
         assert headers["Authorization"] == "bhesignature test_token_id"
 
+        # Preserve requests' secure default and the existing call signature.
+        assert "verify" not in call_args[1]
+
         # Check that we got the expected result
         assert result == {"data": {"test": "success"}}
 
