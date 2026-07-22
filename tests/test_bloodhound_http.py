@@ -1,4 +1,6 @@
 import json
+import logging
+import os
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -132,6 +134,79 @@ class TestHTTPRequestFormation:
         assert sent_data == json.dumps(cypher_query).encode("utf8")
 
         print("✅ JSON data encoding works correctly")
+
+
+class TestTLSVerification:
+    @staticmethod
+    def _response():
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {"data": {}}
+        response.raise_for_status.return_value = None
+        return response
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_default_preserves_requests_call_shape(self):
+        with patch("requests.request", return_value=self._response()) as request:
+            client = BloodhoundBaseClient("host", "id", "key")
+            client.request("GET", "/api/test")
+        assert client.verify_tls is True
+        assert "verify" not in request.call_args.kwargs
+
+    @patch.dict(os.environ, {"BLOODHOUND_VERIFY_TLS": "false"}, clear=True)
+    def test_environment_can_disable_verification(self):
+        with patch("requests.request", return_value=self._response()) as request:
+            client = BloodhoundBaseClient("host", "id", "key")
+            client.request("GET", "/api/test")
+        assert client.verify_tls is False
+        assert request.call_args.kwargs["verify"] is False
+
+    @patch.dict(os.environ, {"BLOODHOUND_VERIFY_TLS": "false"}, clear=True)
+    def test_explicit_true_overrides_environment(self):
+        with patch("requests.request", return_value=self._response()) as request:
+            client = BloodhoundBaseClient("host", "id", "key", verify_tls=True)
+            client.request("GET", "/api/test")
+        assert client.verify_tls is True
+        assert "verify" not in request.call_args.kwargs
+
+    @patch.dict(os.environ, {"BLOODHOUND_VERIFY_TLS": "true"}, clear=True)
+    def test_explicit_false_overrides_environment(self):
+        client = BloodhoundBaseClient("host", "id", "key", verify_tls=False)
+        assert client.verify_tls is False
+
+    @patch.dict(os.environ, {"BLOODHOUND_VERIFY_TLS": "invalid"}, clear=True)
+    def test_invalid_environment_value_fails_closed(self):
+        with pytest.raises(ValueError, match="BLOODHOUND_VERIFY_TLS"):
+            BloodhoundBaseClient("host", "id", "key")
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_invalid_constructor_value_is_rejected(self):
+        with pytest.raises(TypeError, match="verify_tls"):
+            BloodhoundBaseClient("host", "id", "key", verify_tls="false")
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_disabling_verification_logs_warning(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="lib.bloodhound_api"):
+            BloodhoundBaseClient("host", "id", "key", verify_tls=False)
+        assert "TLS certificate verification is disabled" in caplog.text
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_raw_requests_honor_disabled_verification(self):
+        with patch("requests.request", return_value=self._response()) as request:
+            client = BloodhoundBaseClient("host", "id", "key", verify_tls=False)
+            client.raw_request(
+                "POST",
+                "/api/upload",
+                body=b"raw bytes",
+                content_type="application/octet-stream",
+            )
+        assert request.call_args.kwargs["verify"] is False
+        assert request.call_args.kwargs["data"] == b"raw bytes"
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_api_constructor_propagates_verification_setting(self):
+        api = BloodhoundAPI("host", "id", "key", verify_tls=False)
+        assert api.base_client.verify_tls is False
 
 
 class TestHTTPErrorHandling:

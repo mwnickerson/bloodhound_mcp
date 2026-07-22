@@ -95,6 +95,17 @@ BLOODHOUND_PORT=8080
 BLOODHOUND_SCHEME=http
 ```
 
+TLS certificate verification remains enabled when no additional setting is
+provided. For a trusted lab deployment that uses a self-signed certificate,
+verification can be explicitly disabled:
+
+```env
+BLOODHOUND_VERIFY_TLS=false
+```
+
+Disabling verification weakens transport security and logs a warning. Do not
+use this option on untrusted networks.
+
 ---
 
 ## Configuration
