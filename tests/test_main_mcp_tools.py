@@ -15,6 +15,7 @@ Helper covered:
     _handle_tool_call (dispatch, unknown info_type, error propagation)
 """
 
+import base64
 import json
 import sys
 import os
@@ -1637,13 +1638,88 @@ class TestFileUpload:
         json_file.write_bytes(b'{"data":[]}')
         with patch("main.bloodhound_api") as mock_api:
             mock_api.file_upload._validate_file.return_value = None
+            mock_api.file_upload._content_type_for_name.return_value = "application/json"
             mock_api.file_upload.upload_file.return_value = None
             result = json.loads(
                 main.file_upload(info_type="upload_to_job", job_id=7, file_path=str(json_file))
             )
         assert result["data"]["job_id"] == 7
         assert result["data"]["file_name"] == "users.json"
+        assert result["data"]["content_type"] == "application/json"
         assert result["data"]["status"] == "uploaded"
+        mock_api.file_upload.upload_file.assert_called_once_with(
+            7, b'{"data":[]}', "application/json", file_name="users.json"
+        )
+
+    def test_upload_bytes_dispatches_to_upload_collection_bytes(self):
+        zip_bytes = b"PK\x03\x04fakezip"
+        encoded = base64.b64encode(zip_bytes).decode("ascii")
+        expected = {
+            "job_id": 1,
+            "file_name": "sharphound.zip",
+            "file_size_bytes": len(zip_bytes),
+            "content_type": "application/zip",
+            "status": "upload_complete",
+        }
+        with patch("main.bloodhound_api") as mock_api:
+            mock_api.file_upload.upload_collection_bytes.return_value = expected
+            result = json.loads(
+                main.file_upload(
+                    info_type="upload_bytes",
+                    file_name="sharphound.zip",
+                    file_bytes_base64=encoded,
+                )
+            )
+        assert result["data"] == expected
+        mock_api.file_upload.upload_collection_bytes.assert_called_once_with(
+            zip_bytes, "sharphound.zip", content_type=None
+        )
+
+    def test_upload_bytes_to_job_dispatches_to_upload_bytes_to_job(self):
+        json_bytes = b'{"data":[]}'
+        encoded = base64.b64encode(json_bytes).decode("ascii")
+        expected = {
+            "job_id": 7,
+            "file_name": "users.json",
+            "file_size_bytes": len(json_bytes),
+            "content_type": "application/json",
+            "status": "uploaded",
+        }
+        with patch("main.bloodhound_api") as mock_api:
+            mock_api.file_upload.upload_bytes_to_job.return_value = expected
+            result = json.loads(
+                main.file_upload(
+                    info_type="upload_bytes_to_job",
+                    job_id=7,
+                    file_name="users.json",
+                    file_bytes_base64=encoded,
+                    content_type="application/json",
+                )
+            )
+        assert result["data"] == expected
+        mock_api.file_upload.upload_bytes_to_job.assert_called_once_with(
+            7, json_bytes, "users.json", content_type="application/json"
+        )
+
+    def test_upload_bytes_rejects_invalid_base64(self):
+        with patch("main.bloodhound_api"):
+            result = json.loads(
+                main.file_upload(
+                    info_type="upload_bytes",
+                    file_name="sharphound.zip",
+                    file_bytes_base64="not base64!",
+                )
+            )
+        assert "error" in result
+        assert "base64" in result["error"]
+
+    def test_upload_bytes_requires_base64_payload(self):
+        with patch("main.bloodhound_api"):
+            result = json.loads(
+                main.file_upload(info_type="upload_bytes", file_name="sharphound.zip")
+            )
+        assert "error" in result
+        assert "file_bytes_base64 is required" in result["error"]
 
     def test_end_job(self):
         with patch("main.bloodhound_api") as mock_api:
@@ -1658,7 +1734,14 @@ class TestFileUpload:
             result = json.loads(main.file_upload(info_type="nonexistent"))
         assert "error" in result
         assert "nonexistent" in result["error"]
-        for valid in ("upload", "start_job", "upload_to_job", "end_job"):
+        for valid in (
+            "upload",
+            "start_job",
+            "upload_to_job",
+            "upload_bytes",
+            "upload_bytes_to_job",
+            "end_job",
+        ):
             assert valid in result["error"]
 
     def test_api_error_propagation(self, tmp_path):

@@ -32,7 +32,7 @@ Each tool uses an `info_type` parameter to select what data is returned, keeping
 | `data_quality` | `stats`, `platform_list`, `platform_info` |
 | `asset_groups` | `list`, `members`, `custom_selectors` |
 | `custom_nodes` | `list`, `get`, `create`, `update`, `delete`, `validate_icon`, `extension_list`, `extension_upsert`, `extension_delete`, `extension_edges` |
-| `file_upload` | `upload`, `start_job`, `upload_to_job`, `end_job` |
+| `file_upload` | `upload`, `start_job`, `upload_to_job`, `upload_bytes`, `upload_bytes_to_job`, `end_job` |
 
 ### Resources
 
@@ -221,6 +221,27 @@ Run a Cypher query to find all users with SPN set and admincount=1
 Find all computers where DOMAIN USERS can RDP
 ```
 
+**Collection Uploads:**
+```
+Upload this SharpHound ZIP from /tmp/sharphound.zip into BloodHound
+Upload these base64-encoded SharpHound ZIP bytes as sharphound.zip
+Start an upload job, upload these base64 JSON bytes as users.json, then end the job
+```
+
+Agents that already hold a SharpHound or AzureHound collection in memory should
+base64-encode the collection bytes and call:
+
+```python
+file_upload(
+    info_type="upload_bytes",
+    file_name="sharphound.zip",
+    file_bytes_base64="<base64-encoded zip bytes>"
+)
+```
+
+For multi-file jobs, call `start_job`, then `upload_bytes_to_job` for each
+base64 payload, then `end_job`.
+
 ---
 
 ## OpenGraph Support
@@ -256,7 +277,7 @@ Best practices:
 ## Testing
 
 ```bash
-# Full test suite (307 tests)
+# Full test suite
 uv run pytest
 
 # Specific modules
