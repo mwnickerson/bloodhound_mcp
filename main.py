@@ -1456,7 +1456,8 @@ def cypher_reference() -> str:
     DCSync Edge Clarification
     -------------------------
     IMPORTANT: DCSync rights target Domain nodes, NOT Group nodes.
-    The pre-computed DCSync edge AND the raw GetChanges/GetChangesAll edges all point to Domain.
+    The pre-computed DCSync edge AND the raw GetChanges/GetChangesAll/GetChangesInFilteredSet
+    edges point to Domain.
 
     WRONG:  MATCH (n)-[:DCSync]->(g:Group)   -- returns nothing
     CORRECT: MATCH (n)-[:DCSync]->(d:Domain)
@@ -1467,6 +1468,7 @@ def cypher_reference() -> str:
 
     Note: A principal needs BOTH GetChanges AND GetChangesAll to perform DCSync.
     The pre-computed DCSync edge represents this combined condition.
+    GetChangesInFilteredSet is a separate raw edge used for SyncLAPSPassword, not DCSync.
 
     GPO Abuse Path Structure
     ------------------------
@@ -1496,7 +1498,9 @@ def cypher_reference() -> str:
     - AddSelf: Add self to group
     - DCSync: Pre-computed DCSync right (targets Domain node)
     - GetChanges / GetChangesAll: Raw replication privileges (both required for DCSync)
+    - GetChangesInFilteredSet: Raw filtered-attribute replication privilege (used for SyncLAPSPassword)
     - Owns: Object owner
+    - OwnsLimitedRights / WriteOwnerLimitedRights: Limited owner-rights variants
     - AllExtendedRights: All extended permissions
     - CanRDP / CanPSRemote / ExecuteDCOM: Remote access methods
     - AllowedToDelegate: Kerberos constrained delegation
@@ -1509,8 +1513,10 @@ def cypher_reference() -> str:
     - WriteSPN: SPN manipulation (targeted Kerberoasting)
     - WriteAccountRestrictions: Write userAccountControl / msDS-AllowedToActOnBehalfOfOtherIdentity
     - GPLink: GPO linked to OU/Container (direction: GPO -> container)
+    - SameForestTrust: Structural same-forest trust edge
+    - CrossForestTrust: Structural cross-forest trust edge
+    - SpoofSIDHistory / AbuseTGTDelegation: Traversable trust-abuse edges
     - Contains: OU/container membership
-    - TrustedBy: Domain trust
     - CoerceToTGT: Kerberos coercion to TGT
     - AddAllowedToAct: Write RBCD
     - WriteGPLink: Write GPLink attribute
@@ -1573,7 +1579,7 @@ def cypher_reference() -> str:
     RETURN u
 
     Find paths from owned principals to high-value targets:
-    MATCH p=shortestPath((s:Base)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|Contains|DCFor|TrustedBy*1..]->(t:Base))
+    MATCH p=shortestPath((s:Base)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToADUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|WriteOwnerLimitedRights|OwnsLimitedRights|ClaimSpecialIdentity|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|ContainsIdentity|PropagatesACEsTo|GPOAppliesTo|CanApplyGPO|HasTrustKeys|ManageCA|ManageCertificates|Contains|DCFor|SameForestTrust|SpoofSIDHistory|AbuseTGTDelegation|ProtectAdminGroups*1..]->(t:Base))
     WHERE COALESCE(s.system_tags, '') CONTAINS 'owned' AND s<>t
     RETURN p
 
@@ -1823,7 +1829,10 @@ def ad_methodology() -> str:
     MATCH p=(n)-[:HasSIDHistory]->(t) RETURN p
 
     Cross-Domain Trust Exploitation:
-    MATCH p=(d1:Domain)-[:TrustedBy]->(d2:Domain) RETURN p
+    MATCH p=(src:Domain)-[:SameForestTrust|CrossForestTrust]->(dst:Domain) RETURN p
+
+    Trust abuse edges:
+    MATCH p=(src:Domain)-[:SpoofSIDHistory|AbuseTGTDelegation]->(dst:Domain) RETURN p
     domain_info(info_type="inbound_trusts") / domain_info(info_type="outbound_trusts")
 
     NTLM Relay Paths:
@@ -2232,11 +2241,10 @@ def offensive_query_library() -> str:
     LIMIT 100
 
     All DCSync principals combined (standard + non-standard):
-    MATCH (n)-[:DCSync|GetChanges|GetChangesAll]->(d:Domain {name: 'DOMAIN.LOCAL'})
+    MATCH (n)-[r:DCSync|GetChanges|GetChangesAll]->(d:Domain {name: 'DOMAIN.LOCAL'})
     WITH n, d, collect(DISTINCT type(r)) AS edges
-    MATCH (n)-[r2:DCSync|GetChanges|GetChangesAll]->(d)
     RETURN DISTINCT n.name, labels(n) AS node_type, n.admincount,
-           COALESCE(n.system_tags, '') AS tags
+           COALESCE(n.system_tags, '') AS tags, edges
     LIMIT 100
 
     DCSync principals with group context (verify privilege level):
@@ -2244,6 +2252,11 @@ def offensive_query_library() -> str:
     OPTIONAL MATCH (n)-[:MemberOf*1..]->(g:Group)
     RETURN n.name, n.admincount, n.enabled,
            collect(DISTINCT g.name) AS group_memberships
+    LIMIT 100
+
+    Filtered attribute set replication (not DCSync):
+    MATCH (n)-[:GetChangesInFilteredSet]->(d:Domain {name: 'DOMAIN.LOCAL'})
+    RETURN n.name, labels(n) AS node_type, n.objectid
     LIMIT 100
 
     == GPO Abuse ==
@@ -2488,9 +2501,14 @@ def offensive_query_library() -> str:
     == Domain Trusts ==
 
     All outbound trusts (this domain trusts these):
-    MATCH (d:Domain)-[:TrustedBy]->(t:Domain)
-    WHERE d.name = 'DOMAIN.LOCAL'
-    RETURN d.name AS source_domain, t.name AS trusted_domain
+    MATCH p=(src:Domain)-[:SameForestTrust|CrossForestTrust]->(dst:Domain)
+    WHERE src.name = 'DOMAIN.LOCAL'
+    RETURN src.name AS source_domain, dst.name AS trusted_domain
+
+    Trust abuse edges:
+    MATCH p=(src:Domain)-[:SpoofSIDHistory|AbuseTGTDelegation]->(dst:Domain)
+    WHERE src.name = 'DOMAIN.LOCAL'
+    RETURN src.name AS source_domain, type(relationships(p)[0]) AS edge_type, dst.name AS target_domain
 
     Cross-domain attack paths via trusts:
     MATCH p=(n)-[*1..5]->(t:Group)
@@ -2543,7 +2561,7 @@ def offensive_query_library() -> str:
     == Attack Paths from Owned Nodes ==
 
     Shortest paths from all owned principals to any tier-zero/high-value targets:
-    MATCH p=shortestPath((s:Base)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|Contains|DCFor|TrustedBy*1..]->(t:Base))
+    MATCH p=shortestPath((s:Base)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToADUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|WriteOwnerLimitedRights|OwnsLimitedRights|ClaimSpecialIdentity|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|ContainsIdentity|PropagatesACEsTo|GPOAppliesTo|CanApplyGPO|HasTrustKeys|ManageCA|ManageCertificates|Contains|DCFor|SameForestTrust|SpoofSIDHistory|AbuseTGTDelegation|ProtectAdminGroups*1..]->(t:Base))
     WHERE COALESCE(s.system_tags, '') CONTAINS 'owned'
     AND COALESCE(t.system_tags, '') CONTAINS 'tier zero'
     AND s <> t
@@ -2558,10 +2576,11 @@ def offensive_query_library() -> str:
     All outbound edges from a specific user (effective permissions):
     MATCH (u:User {objectid: $user_objectid})-[r]->(t)
     WHERE type(r) IN ['GenericAll','GenericWrite','WriteOwner','WriteDacl',
-                      'ForceChangePassword','AddMember','Owns','AllExtendedRights',
-                      'AddKeyCredentialLink','WriteSPN','AddSelf','AdminTo',
-                      'ReadLAPSPassword','ReadGMSAPassword','DCSync','AllowedToAct',
-                      'AllowedToDelegate','AddAllowedToAct','WriteAccountRestrictions']
+                      'ForceChangePassword','AddMember','Owns','OwnsLimitedRights',
+                      'AllExtendedRights','AddKeyCredentialLink','WriteSPN','AddSelf',
+                      'AdminTo','ReadLAPSPassword','ReadGMSAPassword','DCSync',
+                      'GetChangesInFilteredSet','AllowedToAct','AllowedToDelegate',
+                      'AddAllowedToAct','WriteAccountRestrictions','WriteOwnerLimitedRights']
     RETURN t.name AS target, labels(t) AS target_type, type(r) AS permission
     LIMIT 100
     """

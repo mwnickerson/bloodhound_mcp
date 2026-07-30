@@ -4,6 +4,7 @@ import datetime
 import hashlib
 import hmac
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -15,6 +16,8 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
+
+logger = logging.getLogger(__name__)
 
 
 class BloodhoundError(Exception):
@@ -52,6 +55,7 @@ class BloodhoundBaseClient:
         token_key: str = None,
         port: int = None,
         scheme: str = None,
+        verify_tls: bool = None,
     ):
         """
         Initialize BloodHound API base client
@@ -62,6 +66,8 @@ class BloodhoundBaseClient:
             token_key: API token key
             port: API port (default: 443, or set BLOODHOUND_PORT env var)
             scheme: URL scheme (default: https, or set BLOODHOUND_SCHEME env var)
+            verify_tls: Whether to verify TLS certificates. Defaults to secure requests
+                behavior, or set BLOODHOUND_VERIFY_TLS to a supported boolean value.
         """
         # Load from parameters or environment variables
         self.scheme = scheme or os.getenv("BLOODHOUND_SCHEME") or "https"
@@ -69,6 +75,7 @@ class BloodhoundBaseClient:
         self.port = port or int(os.getenv("BLOODHOUND_PORT") or 443)
         self.token_id = token_id or os.getenv("BLOODHOUND_TOKEN_ID")
         self.token_key = token_key or os.getenv("BLOODHOUND_TOKEN_KEY")
+        self.verify_tls = self._resolve_verify_tls(verify_tls)
 
         # Validate required fields
         if not self.domain:
@@ -83,6 +90,32 @@ class BloodhoundBaseClient:
             raise BloodhoundAuthError(
                 "API token key must be provided either directly or via BLOODHOUND_TOKEN_KEY environment variable"
             )
+
+        if not self.verify_tls:
+            logger.warning(
+                "TLS certificate verification is disabled for BloodHound API requests"
+            )
+
+    @staticmethod
+    def _resolve_verify_tls(verify_tls: bool = None) -> bool:
+        """Resolve explicit TLS configuration before the environment fallback."""
+        if verify_tls is not None:
+            if not isinstance(verify_tls, bool):
+                raise TypeError("verify_tls must be a boolean or None")
+            return verify_tls
+
+        value = os.getenv("BLOODHOUND_VERIFY_TLS")
+        if value is None:
+            return True
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        raise ValueError(
+            "BLOODHOUND_VERIFY_TLS must be one of: "
+            "true, false, 1, 0, yes, no, on, off"
+        )
 
     def _format_url(self, uri: str) -> str:
         """Format the complete URL from the URI path"""
@@ -144,12 +177,15 @@ class BloodhoundBaseClient:
 
         # Make the request with signed headers
         try:
-            return requests.request(
-                method=method,
-                url=self._format_url(uri),
-                headers=headers,
-                data=body,
-            )
+            request_kwargs = {
+                "method": method,
+                "url": self._format_url(uri),
+                "headers": headers,
+                "data": body,
+            }
+            if not self.verify_tls:
+                request_kwargs["verify"] = False
+            return requests.request(**request_kwargs)
         except requests.exceptions.ConnectionError as e:
             raise BloodhoundConnectionError(f"Failed to connect to BloodHound API: {e}")
 
@@ -447,6 +483,7 @@ class BloodhoundAPI:
         token_key: str = None,
         port: int = None,
         scheme: str = None,
+        verify_tls: bool = None,
     ):
         """
         Initialize BloodHound API client
@@ -457,12 +494,14 @@ class BloodhoundAPI:
             token_key: API token key
             port: API port 
             scheme: URL scheme
-        If domain, token_id, token_key, port or scheme are not provided, they will be loaded from
-        environment variables: BLOODHOUND_DOMAIN, BLOODHOUND_TOKEN_ID, BLOODHOUND_TOKEN_KEY, BLOODHOUND_PORT, BLOODHOUND_SCHEME
+            verify_tls: Whether to verify TLS certificates
+        If values are not provided, they will be loaded from environment variables:
+        BLOODHOUND_DOMAIN, BLOODHOUND_TOKEN_ID, BLOODHOUND_TOKEN_KEY,
+        BLOODHOUND_PORT, BLOODHOUND_SCHEME, BLOODHOUND_VERIFY_TLS.
         """
         # Initialize base client
         self.base_client = BloodhoundBaseClient(
-            domain, token_id, token_key, port, scheme
+            domain, token_id, token_key, port, scheme, verify_tls
         )
 
         # Initialize resource clients
