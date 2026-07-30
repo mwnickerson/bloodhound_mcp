@@ -116,10 +116,20 @@ def bloodhound_assistant() -> str:
     10. COUNT, COLLECT, SUM, AVG, MIN, and MAX are API-safe but not BloodHound GUI-safe.
         Use them with cypher_query(info_type="run") when you need aggregation. When giving the
         user a query to paste into the GUI, return individual nodes, edges, or paths instead.
+    11. Current SpecterOps edge guidance marks SameForestTrust and CrossForestTrust as
+        traversable domain-to-domain trust relationships. Follow the stored edge direction and do
+        not infer a reverse path. SpoofSIDHistory and AbuseTGTDelegation are separate,
+        configuration-dependent traversable trust-abuse relationships; do not substitute them for
+        the domain trust edges. Never use the removed legacy trust relationship.
+    12. Before deciding whether an edge belongs in a pathfinding query or constructing an explicit
+        relationship allowlist, load bloodhound://cypher/traversable-edges. Treat traversability as
+        version-sensitive, preserve the stored edge direction, and do not infer reverse relationships.
 
     ## Resources
     Quick reference (load as needed):
     - bloodhound://cypher/reference — Cypher syntax, schema, property names, and examples
+    - bloodhound://cypher/traversable-edges — Version-aware traversability rules, edge lists,
+      rationale, and pathfinding guidance
     - bloodhound://cypher/offensive-queries — Battle-tested templates for DCSync, GPO abuse,
       Kerberoasting, delegation, ADCS, infrastructure enumeration, shadow credentials, and more
     - bloodhound://guides/ad — AD node types, relationships, tool workflow
@@ -1513,9 +1523,8 @@ def cypher_reference() -> str:
     - WriteSPN: SPN manipulation (targeted Kerberoasting)
     - WriteAccountRestrictions: Write userAccountControl / msDS-AllowedToActOnBehalfOfOtherIdentity
     - GPLink: GPO linked to OU/Container (direction: GPO -> container)
-    - SameForestTrust: Structural same-forest trust edge
-    - CrossForestTrust: Structural cross-forest trust edge
-    - SpoofSIDHistory / AbuseTGTDelegation: Traversable trust-abuse edges
+    - SameForestTrust / CrossForestTrust: Traversable domain-to-domain trust relationships
+    - SpoofSIDHistory / AbuseTGTDelegation: Configuration-dependent traversable trust-abuse relationships
     - Contains: OU/container membership
     - CoerceToTGT: Kerberos coercion to TGT
     - AddAllowedToAct: Write RBCD
@@ -1579,7 +1588,7 @@ def cypher_reference() -> str:
     RETURN u
 
     Find paths from owned principals to high-value targets:
-    MATCH p=shortestPath((s:Base)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToADUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|WriteOwnerLimitedRights|OwnsLimitedRights|ClaimSpecialIdentity|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|ContainsIdentity|PropagatesACEsTo|GPOAppliesTo|CanApplyGPO|HasTrustKeys|ManageCA|ManageCertificates|Contains|DCFor|SameForestTrust|SpoofSIDHistory|AbuseTGTDelegation|ProtectAdminGroups*1..]->(t:Base))
+    MATCH p=shortestPath((s:Base)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToADUser|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|WriteOwnerLimitedRights|OwnsLimitedRights|ClaimSpecialIdentity|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|ContainsIdentity|PropagatesACEsTo|GPOAppliesTo|CanApplyGPO|HasTrustKeys|ManageCA|ManageCertificates|Contains|DCFor|SameForestTrust|CrossForestTrust|SpoofSIDHistory|AbuseTGTDelegation|WriteAltSecurityIdentities|WritePublicInformation*1..]->(t:Base))
     WHERE COALESCE(s.system_tags, '') CONTAINS 'owned' AND s<>t
     RETURN p
 
@@ -1597,6 +1606,142 @@ def cypher_reference() -> str:
     WITH u, count(r) as num_permissions
     RETURN u.displayname, num_permissions
     ORDER BY num_permissions DESC LIMIT 10
+    """
+
+
+@mcp.resource("bloodhound://cypher/traversable-edges")
+def traversable_edges_reference() -> str:
+    """Version-aware BloodHound edge traversability and pathfinding reference."""
+    return """BloodHound Traversable Edges Reference
+    ======================================
+
+    Purpose
+    -------
+    Load this resource before deciding whether a relationship belongs in an
+    attack-path query or before constructing an explicit relationship allowlist.
+
+    A traversable edge means control or capability can flow from the source node
+    to the destination node strongly enough that an attacker can continue using
+    the destination node's outgoing privileges. Pathfinding follows the edge's
+    stored direction. Never infer a reverse relationship unless the graph contains
+    a corresponding reverse edge.
+
+    Version and Source of Truth
+    ---------------------------
+    This snapshot follows the current public SpecterOps traversable-edge reference
+    reviewed on 2026-07-30. Traversability changes between BloodHound releases.
+    Historical v7.4 release notes initially described SameForestTrust and
+    CrossForestTrust as non-traversable, while the current edge reference marks
+    both as traversable. When an instance behaves differently, prefer its versioned
+    schema and runtime pathfinding behavior over this snapshot.
+
+    Current trust-edge rule:
+    - SameForestTrust and CrossForestTrust are traversable domain-to-domain trust
+      relationships. Follow the stored direction.
+    - SpoofSIDHistory and AbuseTGTDelegation are separate, configuration-dependent
+      traversable trust-abuse relationships. They are not substitutes for the
+      domain trust relationships.
+    - TrustedBy was removed in BloodHound v7.4 and must not be used.
+
+    Why Traversable Edges Are Traversable
+    --------------------------------------
+    - Object control: the source can take over or materially modify the target
+      (GenericAll, GenericWrite, WriteDacl, WriteOwner, Owns, limited-rights edges).
+    - Identity and membership: the source can become, add, or act as the target
+      identity and inherit its privileges (MemberOf, AddMember, AddSelf,
+      ClaimSpecialIdentity).
+    - Credential access: the source can obtain or replace authentication material
+      for the target (ForceChangePassword, AddKeyCredentialLink, ReadLAPSPassword,
+      ReadGMSAPassword, SyncLAPSPassword, DumpSMSAPassword, WriteSPN).
+    - Execution and sessions: the source can execute code on the target or reach a
+      logged-on identity (AdminTo, CanRDP, CanPSRemote, ExecuteDCOM, SQLAdmin,
+      HasSession).
+    - Delegation, relay, and trust: authentication can be delegated, relayed, or
+      carried across the relationship (AllowedToAct, AllowedToDelegate,
+      CoerceToTGT, CoerceAndRelayNTLM*, SameForestTrust, CrossForestTrust,
+      SpoofSIDHistory, AbuseTGTDelegation).
+    - Replication, policy, and PKI: the source can obtain directory secrets or
+      create authentication/control paths through policy or certificates (DCSync,
+      GPLink, WriteGPLink, ADCS ESC edges, GoldenCert, ManageCA,
+      ManageCertificates).
+    - Hybrid and cloud control: role, ownership, membership, secret access, or
+      workload execution transfers effective control to the destination.
+
+    Documented Traversable AD Edges
+    -------------------------------
+    AbuseTGTDelegation, ADCSESC1, ADCSESC3, ADCSESC4, ADCSESC6a, ADCSESC6b,
+    ADCSESC9a, ADCSESC9b, ADCSESC10a, ADCSESC10b, ADCSESC13,
+    AddAllowedToAct, AddKeyCredentialLink, AddMember, AddSelf, AdminTo,
+    AllExtendedRights, AllowedToAct, AllowedToDelegate, CanPSRemote, CanRDP,
+    ClaimSpecialIdentity, CoerceAndRelayNTLMToADCS, CoerceAndRelayNTLMToLDAP,
+    CoerceAndRelayNTLMToLDAPS, CoerceAndRelayNTLMToSMB, CoerceToTGT, Contains,
+    CrossForestTrust, DCFor, DCSync, DumpSMSAPassword, ExecuteDCOM,
+    ForceChangePassword, GenericAll, GenericWrite, GoldenCert, GPLink,
+    HasSession, HasSIDHistory, HasTrustKeys, ManageCA, ManageCertificates,
+    MemberOf, Owns, OwnsLimitedRights, ReadGMSAPassword, ReadLAPSPassword,
+    SameForestTrust, SpoofSIDHistory, SQLAdmin, SyncedToADUser,
+    SyncedToEntraUser, SyncLAPSPassword, WriteAccountRestrictions,
+    WriteAltSecurityIdentities, WriteDacl, WriteGPLink, WriteOwner,
+    WriteOwnerLimitedRights, WritePublicInformation, WriteSPN.
+
+    Version-Specific Runtime Pathfinding Edges
+    ------------------------------------------
+    BloodHound CE 9.1.0 pathfinding allowlists also include CanApplyGPO,
+    ContainsIdentity, GPOAppliesTo, and PropagatesACEsTo. These edges are not
+    currently enumerated in the public traversable-edge table above, so validate
+    them against the target instance before using them in raw Cypher.
+
+    Documented Traversable Azure/Entra Edges
+    ----------------------------------------
+    AZAddMembers, AZAddOwner, AZAddSecret, AZAppAdmin, AZAutomationContributor,
+    AZAvereContributor, AZCloudAppAdmin, AZContains, AZContributor,
+    AZExecuteCommand, AZGetCertificates, AZGetKeys, AZGetSecrets, AZGlobalAdmin,
+    AZHasRole, AZKeyVaultKVContributor, AZLogicAppContributor, AZManagedIdentity,
+    AZMemberOf, AZMGAddMember, AZMGAddOwner, AZMGAddSecret, AZMGGrantAppRoles,
+    AZMGGrantRole, AZNodeResourceGroup, AZOwner, AZOwns,
+    AZPrivilegedAuthAdmin, AZPrivilegedRoleAdmin, AZResetPassword, AZRunsAs,
+    AZUserAccessAdministrator, AZVMAdminLogin, AZVMContributor,
+    AZWebsiteContributor, SyncedToADUser.
+
+    Important Non-Traversable AD Edges
+    ----------------------------------
+    DelegatedEnrollmentAgent, Enroll, EnrollOnBehalfOf, EnterpriseCAFor,
+    ExtendedByPolicy, GetChanges, GetChangesAll, GetChangesInFilteredSet,
+    HostsCAService, IssuedSignedBy, LocalToComputer, MemberOfLocalGroup,
+    NTAuthStoreFor, OIDGroupLink, OwnsRaw, ProtectAdminGroups, PublishedTo,
+    RemoteInteractiveLogonRight, RootCAFor, TrustedForNTAuth, WriteOwnerRaw,
+    WritePKIEnrollmentFlag, WritePKINameFlag.
+
+    Non-traversable edges can still contribute to post-processed traversable
+    edges. For example, GetChanges plus GetChangesAll can produce DCSync. Query
+    the raw edges for evidence, but use DCSync for pathfinding.
+
+    Important Non-Traversable Azure/Entra Edges
+    --------------------------------------------
+    AZMGAppRoleAssignment_ReadWrite_All, AZMGApplication_ReadWrite_All,
+    AZMGDirectory_ReadWrite_All, AZMGGroupMember_ReadWrite_All,
+    AZMGGroup_ReadWrite_All, AZMGRoleManagement_ReadWrite_Directory,
+    AZMGServicePrincipalEndpoint_ReadWrite_All.
+
+    Query Construction Rules
+    ------------------------
+    1. Prefer graph_analysis(info_type="shortest_path", ...) or BloodHound's native
+       pathfinding UI/API because the runtime applies its version-specific
+       traversability rules.
+    2. Raw Cypher wildcard traversal such as shortestPath((source)-[*1..]->(target))
+       can follow non-traversable relationships. Never describe a wildcard Cypher
+       path as traversable-only without inspecting every relationship in the result.
+    3. If raw Cypher needs an explicit relationship allowlist, include only edges
+       that are traversable for the target BloodHound version.
+    4. Preserve edge direction. Do not reverse a trust, delegation, membership,
+       or control edge based only on its human-readable name.
+    5. Use non-traversable edges for evidence and composition analysis, not as
+       standalone attack-path hops.
+    6. Explain the capability transferred at every hop. Do not call a path valid
+       merely because a relationship name appears in this list.
+
+    Official reference:
+    https://bloodhound.specterops.io/resources/edges/traversable-edges
     """
 
 
@@ -1625,6 +1770,8 @@ def ad_guide() -> str:
     Remote:       CanRDP, CanPSRemote, ExecuteDCOM, SQLAdmin
     Delegation:   AllowedToDelegate, AllowedToAct, CoerceToTGT
     Modification: ForceChangePassword, AddMember, WriteSPN, AddKeyCredentialLink
+    Trust:        SameForestTrust, CrossForestTrust (traversable domain relationships)
+    Trust abuse:  SpoofSIDHistory, AbuseTGTDelegation (configuration-dependent, traversable)
 
     Tool Workflow
     -------------
@@ -1828,10 +1975,10 @@ def ad_methodology() -> str:
     SID History:
     MATCH p=(n)-[:HasSIDHistory]->(t) RETURN p
 
-    Cross-Domain Trust Exploitation:
+    Traversable domain trust relationships (follow the stored direction):
     MATCH p=(src:Domain)-[:SameForestTrust|CrossForestTrust]->(dst:Domain) RETURN p
 
-    Trust abuse edges:
+    Configuration-dependent traversable trust-abuse relationships:
     MATCH p=(src:Domain)-[:SpoofSIDHistory|AbuseTGTDelegation]->(dst:Domain) RETURN p
     domain_info(info_type="inbound_trusts") / domain_info(info_type="outbound_trusts")
 
@@ -2500,12 +2647,12 @@ def offensive_query_library() -> str:
 
     == Domain Trusts ==
 
-    All outbound trusts (this domain trusts these):
+    Traversable outbound trust relationships (follow the stored direction):
     MATCH p=(src:Domain)-[:SameForestTrust|CrossForestTrust]->(dst:Domain)
     WHERE src.name = 'DOMAIN.LOCAL'
     RETURN src.name AS source_domain, dst.name AS trusted_domain
 
-    Trust abuse edges:
+    Configuration-dependent traversable trust-abuse relationships:
     MATCH p=(src:Domain)-[:SpoofSIDHistory|AbuseTGTDelegation]->(dst:Domain)
     WHERE src.name = 'DOMAIN.LOCAL'
     RETURN src.name AS source_domain, type(relationships(p)[0]) AS edge_type, dst.name AS target_domain
@@ -2561,7 +2708,7 @@ def offensive_query_library() -> str:
     == Attack Paths from Owned Nodes ==
 
     Shortest paths from all owned principals to any tier-zero/high-value targets:
-    MATCH p=shortestPath((s:Base)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToADUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|WriteOwnerLimitedRights|OwnsLimitedRights|ClaimSpecialIdentity|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|ContainsIdentity|PropagatesACEsTo|GPOAppliesTo|CanApplyGPO|HasTrustKeys|ManageCA|ManageCertificates|Contains|DCFor|SameForestTrust|SpoofSIDHistory|AbuseTGTDelegation|ProtectAdminGroups*1..]->(t:Base))
+    MATCH p=shortestPath((s:Base)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToADUser|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|WriteOwnerLimitedRights|OwnsLimitedRights|ClaimSpecialIdentity|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|ContainsIdentity|PropagatesACEsTo|GPOAppliesTo|CanApplyGPO|HasTrustKeys|ManageCA|ManageCertificates|Contains|DCFor|SameForestTrust|CrossForestTrust|SpoofSIDHistory|AbuseTGTDelegation|WriteAltSecurityIdentities|WritePublicInformation*1..]->(t:Base))
     WHERE COALESCE(s.system_tags, '') CONTAINS 'owned'
     AND COALESCE(t.system_tags, '') CONTAINS 'tier zero'
     AND s <> t

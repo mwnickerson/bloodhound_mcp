@@ -15,6 +15,7 @@ Helper covered:
     _handle_tool_call (dispatch, unknown info_type, error propagation)
 """
 
+import asyncio
 import base64
 import json
 import sys
@@ -792,13 +793,88 @@ class TestPromptResources:
     def test_bloodhound_assistant_points_to_current_edge_guidance(self):
         prompt = main.bloodhound_assistant()
         assert "TrustedBy" not in prompt
+        assert "SameForestTrust and CrossForestTrust as" in prompt
+        assert "traversable domain-to-domain trust relationships" in prompt
+        assert "configuration-dependent" in prompt
+        assert "SpoofSIDHistory and AbuseTGTDelegation" in prompt
         assert "bloodhound://cypher/offensive-queries" in prompt
         assert "bloodhound://cypher/reference" in prompt
+        assert "bloodhound://cypher/traversable-edges" in prompt
+
+    def test_traversable_edges_resource_is_version_aware_and_actionable(self):
+        text = main.traversable_edges_reference()
+
+        assert "Documented Traversable AD Edges" in text
+        assert "Documented Traversable Azure/Entra Edges" in text
+        assert "Important Non-Traversable AD Edges" in text
+        assert "Version-Specific Runtime Pathfinding Edges" in text
+        assert "Pathfinding follows the edge's" in text
+        assert "stored direction." in text
+        assert "Historical v7.4 release notes" in text
+        assert "GetChanges plus GetChangesAll can produce DCSync" in text
+
+        for edge in (
+            "SameForestTrust",
+            "CrossForestTrust",
+            "SpoofSIDHistory",
+            "AbuseTGTDelegation",
+        ):
+            assert edge in text
+
+        assert "TrustedBy was removed" in text
+        assert "ProtectAdminGroups" in text
+        assert "wildcard Cypher" in text
+        assert "reviewed on 2026-07-30" in text
+
+    def test_traversable_edges_resource_is_registered(self):
+        resources = asyncio.run(main.mcp.list_resources())
+        resource_uris = {str(resource.uri) for resource in resources}
+
+        assert "bloodhound://cypher/traversable-edges" in resource_uris
+        assert len(resource_uris) == 11
+
+    def test_resources_document_traversable_trust_edges(self):
+        reference = main.cypher_reference()
+        guide = main.ad_guide()
+        methodology = main.ad_methodology()
+        queries = main.offensive_query_library()
+
+        for text in (reference, guide, methodology, queries):
+            assert "TrustedBy" not in text
+            assert "SameForestTrust" in text
+            assert "CrossForestTrust" in text
+            assert "SpoofSIDHistory" in text
+            assert "AbuseTGTDelegation" in text
+
+        assert (
+            "SameForestTrust / CrossForestTrust: Traversable" in reference
+        )
+        assert "Trust:        SameForestTrust, CrossForestTrust (traversable" in guide
+        assert "configuration-dependent" in reference.lower()
+        assert "configuration-dependent" in guide
+        assert "Configuration-dependent traversable" in methodology
+        assert "Configuration-dependent traversable" in queries
+
+    def test_shortest_path_allowlists_include_traversable_trust_edges(self):
+        for resource in (main.cypher_reference(), main.offensive_query_library()):
+            shortest_paths = [
+                line
+                for line in resource.splitlines()
+                if "MATCH p=shortestPath((s:Base)" in line
+            ]
+            assert shortest_paths
+            for shortest_path in shortest_paths:
+                assert "SameForestTrust" in shortest_path
+                assert "CrossForestTrust" in shortest_path
+                assert "SpoofSIDHistory" in shortest_path
+                assert "AbuseTGTDelegation" in shortest_path
+                assert "ProtectAdminGroups" not in shortest_path
 
     def test_offensive_query_library_uses_current_edge_names(self):
         text = main.offensive_query_library()
         assert "TrustedBy" not in text
         assert "SameForestTrust" in text
+        assert "CrossForestTrust" in text
         assert "GetChangesInFilteredSet" in text
         assert "OwnsLimitedRights" in text
         assert "WriteOwnerLimitedRights" in text

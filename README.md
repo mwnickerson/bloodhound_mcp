@@ -12,7 +12,7 @@ A Model Context Protocol (MCP) server that connects LLMs to BloodHound Community
 
 ## How It Works
 
-The server exposes BloodHound CE's REST API and Neo4j graph through a set of **13 composite MCP tools**, **10 reference resources**, and a **system prompt** tuned for offensive security analysis.
+The server exposes BloodHound CE's REST API and Neo4j graph through a set of **13 composite MCP tools**, **11 reference resources**, and a **system prompt** tuned for offensive security analysis.
 
 ### Composite Tools
 
@@ -41,6 +41,7 @@ Reference material the LLM loads on demand — no extra API calls:
 | Resource URI | Contents |
 |---|---|
 | `bloodhound://cypher/reference` | Cypher syntax, schema, property names, patterns |
+| `bloodhound://cypher/traversable-edges` | Version-aware traversability rules, complete documented AD/Azure edge lists, rationale, and pathfinding guidance |
 | `bloodhound://cypher/offensive-queries` | Battle-tested templates: DCSync, Kerberoasting, GPO abuse, delegation, ADCS, shadow credentials, NTLM relay, and more |
 | `bloodhound://guides/ad` | AD node types and relationships quick reference |
 | `bloodhound://guides/ad-methodology` | Full AD attack methodology and workflow |
@@ -241,6 +242,25 @@ file_upload(
 
 For multi-file jobs, call `start_job`, then `upload_bytes_to_job` for each
 base64 payload, then `end_job`.
+
+---
+
+## BloodHound Trust Edge Compatibility
+
+BloodHound v7.4 replaced the legacy `TrustedBy` relationship with four
+trust relationships. The current SpecterOps edge reference marks all four as
+traversable, although historical v7.4 release notes initially treated the two
+structural trust relationships differently:
+
+- `SameForestTrust` and `CrossForestTrust` represent traversable
+  domain-to-domain trust reachability. Follow the stored edge direction; do not
+  infer a reverse path unless the graph contains one.
+- `SpoofSIDHistory` and `AbuseTGTDelegation` are separate, configuration-dependent
+  traversable trust-abuse relationships. They describe specific abuse
+  capabilities and do not replace the domain trust edges.
+
+See the [BloodHound v7.4 release notes](https://bloodhound.specterops.io/resources/release-notes/v7-4-0)
+and the [traversable edge reference](https://bloodhound.specterops.io/resources/edges/traversable-edges).
 
 ---
 
