@@ -57,6 +57,16 @@ class TestExceptions:
         assert error.response is None
         assert error.status_code is None
 
+    def test_bloodhound_api_error_keeps_status_from_falsey_error_response(self):
+        """HTTP error responses still expose their status code."""
+        response = requests.Response()
+        response.status_code = 401
+
+        assert not response
+
+        error = BloodhoundAPIError("Unauthorized", response)
+        assert error.status_code == 401
+
 
 class TestBloodhoundBaseClient:
     """Test the BloodhoundBaseClient class"""
@@ -229,6 +239,21 @@ class TestBloodhoundBaseClient:
             client._request("GET", "/api/v2/test")
         
         assert "Failed to connect to BloodHound API" in str(exc_info.value)
+
+    @patch("requests.request")
+    def test_request_timeout_is_bounded_and_wrapped(self, mock_request):
+        """A configured timeout is forwarded and reported as a connection error."""
+        mock_request.side_effect = requests.exceptions.Timeout("Request timed out")
+
+        client = BloodhoundBaseClient(
+            domain="test.local", token_id="test_id", token_key="test_key"
+        )
+
+        with pytest.raises(BloodhoundConnectionError) as exc_info:
+            client._request("GET", "/api/v2/self", timeout=10)
+
+        assert "Timed out connecting to BloodHound API" in str(exc_info.value)
+        assert mock_request.call_args.kwargs["timeout"] == 10
 
     @patch('requests.request')
     def test_request_with_params_and_data(self, mock_request):
@@ -406,6 +431,40 @@ class TestBloodhoundAPI:
         
         result = api.test_connection()
         assert result is None
+
+    @patch.object(BloodhoundBaseClient, "request")
+    def test_validate_credentials_success(self, mock_request):
+        """Credential validation uses the authenticated self endpoint."""
+        mock_request.return_value = {"data": {"id": "123"}}
+
+        api = BloodhoundAPI(
+            domain="test.local",
+            token_id="test_id",
+            token_key="test_key",
+        )
+
+        assert api.validate_credentials() is None
+        mock_request.assert_called_once_with(
+            "GET", "/api/v2/self", timeout=api.STARTUP_TIMEOUT_SECONDS
+        )
+
+    @patch.object(BloodhoundBaseClient, "request")
+    def test_validate_credentials_propagates_failure(self, mock_request):
+        """Credential validation fails closed instead of swallowing API errors."""
+        response = Mock(status_code=401)
+        error = BloodhoundAPIError("Unauthorized", response)
+        mock_request.side_effect = error
+
+        api = BloodhoundAPI(
+            domain="test.local",
+            token_id="test_id",
+            token_key="test_key",
+        )
+
+        with pytest.raises(BloodhoundAPIError) as exc_info:
+            api.validate_credentials()
+
+        assert exc_info.value is error
 
     @patch.object(BloodhoundBaseClient, 'request')
     def test_get_self_info_success(self, mock_request):

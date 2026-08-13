@@ -15,6 +15,7 @@ Helper covered:
     _handle_tool_call (dispatch, unknown info_type, error propagation)
 """
 
+import asyncio
 import base64
 import json
 import sys
@@ -55,6 +56,9 @@ class TestRuntimeCompatibility:
         assert isinstance(main.mcp, FastMCP)
         assert isinstance(main.bloodhound_api, BloodhoundAPI)
 
+    def test_fastmcp_uses_credential_preflight_lifespan(self):
+        assert main.mcp.settings.lifespan is main._bloodhound_lifespan
+
 
 def make_api_error(status_code: int) -> BloodhoundAPIError:
     response = MagicMock()
@@ -87,6 +91,41 @@ def make_api_error_with_body(
     error = BloodhoundAPIError(f"HTTP {status_code}", response)
     error.status_code = status_code
     return error
+
+
+class TestStartupCredentialPreflight:
+    @staticmethod
+    async def _run_lifespan():
+        async with main._bloodhound_lifespan(main.mcp):
+            pass
+
+    def test_validates_credentials_before_startup(self):
+        with patch.object(
+            main.bloodhound_api, "validate_credentials"
+        ) as validate_credentials:
+            asyncio.run(self._run_lifespan())
+
+        validate_credentials.assert_called_once_with()
+
+    def test_authentication_failure_aborts_startup(self):
+        error = make_api_error(401)
+        with patch.object(
+            main.bloodhound_api, "validate_credentials", side_effect=error
+        ):
+            with pytest.raises(BloodhoundAPIError) as exc_info:
+                asyncio.run(self._run_lifespan())
+
+        assert exc_info.value is error
+
+    def test_connection_failure_aborts_startup(self):
+        error = BloodhoundConnectionError("unreachable")
+        with patch.object(
+            main.bloodhound_api, "validate_credentials", side_effect=error
+        ):
+            with pytest.raises(BloodhoundConnectionError) as exc_info:
+                asyncio.run(self._run_lifespan())
+
+        assert exc_info.value is error
 
 
 # ---------------------------------------------------------------------------

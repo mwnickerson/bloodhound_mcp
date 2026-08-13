@@ -41,10 +41,10 @@ class BloodhoundConnectionError(BloodhoundError):
 class BloodhoundAPIError(BloodhoundError):
     """Custom exception for BloodHound API errors"""
 
-    def __init__(self, message: str, response: requests.Response):
+    def __init__(self, message: str, response: Optional[requests.Response]):
         super().__init__(message)
         self.response = response
-        self.status_code = response.status_code if response else None
+        self.status_code = response.status_code if response is not None else None
 
 
 class BloodhoundBaseClient:
@@ -132,6 +132,7 @@ class BloodhoundBaseClient:
         body: Optional[bytes] = None,
         content_type: str = "application/json",
         extra_headers: Optional[Dict[str, str]] = None,
+        timeout: Optional[float] = None,
     ) -> requests.Response:
         """
         Make a signed request to the BloodHound API
@@ -141,6 +142,8 @@ class BloodhoundBaseClient:
             uri: Request URI
             body: Optional request body
             content_type: Content-Type header value (default: application/json)
+            extra_headers: Optional additional HTTP headers
+            timeout: Optional request timeout in seconds
 
         Returns:
             Response from the API
@@ -185,7 +188,13 @@ class BloodhoundBaseClient:
             }
             if not self.verify_tls:
                 request_kwargs["verify"] = False
+            if timeout is not None:
+                request_kwargs["timeout"] = timeout
             return requests.request(**request_kwargs)
+        except requests.exceptions.Timeout as e:
+            raise BloodhoundConnectionError(
+                f"Timed out connecting to BloodHound API: {e}"
+            )
         except requests.exceptions.ConnectionError as e:
             raise BloodhoundConnectionError(f"Failed to connect to BloodHound API: {e}")
 
@@ -195,6 +204,7 @@ class BloodhoundBaseClient:
         uri: str,
         params: Optional[Dict[str, Any]] = None,
         data: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         Make an API request and return the parsed JSON response
@@ -204,6 +214,7 @@ class BloodhoundBaseClient:
             uri: Request URI
             params: Optional query parameters
             data: Optional request body data (will be JSON encoded)
+            timeout: Optional request timeout in seconds
 
         Returns:
             Parsed JSON response
@@ -218,7 +229,7 @@ class BloodhoundBaseClient:
             body = json.dumps(data).encode("utf8")
 
         # Make the request
-        response = self._request(method, uri, body)
+        response = self._request(method, uri, body, timeout=timeout)
 
         # Handle response
         try:
@@ -519,6 +530,18 @@ class BloodhoundAPI:
         self.opengraph_extensions = OpenGraphExtensionsClient(self.base_client)
         self.asset_groups = AssetGroupsClient(self.base_client)
         self.file_upload = FileUploadClient(self.base_client)
+
+    STARTUP_TIMEOUT_SECONDS = 10
+
+    def validate_credentials(self) -> None:
+        """Validate configured credentials against the authenticated self endpoint.
+
+        Unlike the legacy connection helpers below, this method deliberately lets
+        connection and API errors propagate so callers can fail closed.
+        """
+        self.base_client.request(
+            "GET", "/api/v2/self", timeout=self.STARTUP_TIMEOUT_SECONDS
+        )
 
     def test_connection(self) -> Dict[str, Any]:
         """
