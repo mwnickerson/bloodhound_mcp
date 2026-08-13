@@ -88,6 +88,11 @@ BLOODHOUND_TOKEN_ID=your-token-id
 BLOODHOUND_TOKEN_KEY=your-token-key
 ```
 
+At startup, the MCP server makes a signed, read-only request to
+`/api/v2/self`. Invalid credentials, connectivity failures, and TLS failures
+stop the server before it accepts MCP tool calls. The startup request times out
+after 10 seconds.
+
 The server defaults to `https` on port `443`. Override if needed:
 
 ```env

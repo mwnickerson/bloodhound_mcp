@@ -11,6 +11,8 @@ import binascii
 import json
 import logging
 import re
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -42,9 +44,32 @@ AGGREGATION_PATTERN = re.compile(
 # Load environment variables
 load_dotenv()
 
-# Initialize the MCP server and Bloodhound API client
-mcp = FastMCP("bloodhound_mcp")
+# Initialize the BloodHound API client before configuring the MCP lifespan.
 bloodhound_api = BloodhoundAPI()
+
+
+@asynccontextmanager
+async def _bloodhound_lifespan(_: FastMCP) -> AsyncIterator[None]:
+    """Validate BloodHound credentials before accepting MCP requests."""
+    try:
+        bloodhound_api.validate_credentials()
+    except BloodhoundAPIError as e:
+        logger.error(
+            "BloodHound credential preflight failed (HTTP %s)", e.status_code
+        )
+        raise
+    except BloodhoundConnectionError:
+        logger.error("BloodHound credential preflight failed: unable to connect")
+        raise
+    except Exception:
+        logger.error("BloodHound credential preflight failed: unexpected error")
+        raise
+
+    logger.info("BloodHound credential preflight passed")
+    yield
+
+
+mcp = FastMCP("bloodhound_mcp", lifespan=_bloodhound_lifespan)
 
 
 # Helper function
