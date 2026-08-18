@@ -74,6 +74,22 @@ The `bloodhound_assistant` prompt includes behavioral rules that guide the LLM:
 
 ## Installation
 
+Run the MCP server directly from Git without cloning it first:
+
+```bash
+export BLOODHOUND_DOMAIN=your-bloodhound-instance.domain.com
+export BLOODHOUND_TOKEN_ID=your-token-id
+export BLOODHOUND_TOKEN_KEY=your-token-key
+uvx --from git+https://github.com/mwnickerson/bloodhound_mcp bloodhound-mcp
+```
+
+For a reproducible integration, append a commit after the repository URL, for
+example `git+https://github.com/mwnickerson/bloodhound_mcp@<commit>`.
+An `uvx` installation does not read the `.env` from a separate checkout, so
+the process that launches the MCP client must provide the credential variables.
+
+For development, clone the repository and install its environment:
+
 ```bash
 git clone https://github.com/mwnickerson/bloodhound_mcp.git
 cd bloodhound-mcp
@@ -123,12 +139,11 @@ Add to `claude_desktop_config.json`:
 {
   "mcpServers": {
     "bloodhound_mcp": {
-      "command": "uv",
+      "command": "uvx",
       "args": [
-        "--directory",
-        "/path/to/bloodhound-mcp",
-        "run",
-        "main.py"
+        "--from",
+        "git+https://github.com/mwnickerson/bloodhound_mcp",
+        "bloodhound-mcp"
       ]
     }
   }
@@ -144,12 +159,11 @@ Add to `~/.claude/mcp.json`:
   "mcpServers": {
     "bloodhound_mcp": {
       "type": "stdio",
-      "command": "uv",
+      "command": "uvx",
       "args": [
-        "--directory",
-        "/path/to/bloodhound-mcp",
-        "run",
-        "main.py"
+        "--from",
+        "git+https://github.com/mwnickerson/bloodhound_mcp",
+        "bloodhound-mcp"
       ]
     }
   }
@@ -162,16 +176,17 @@ Add to `~/.codex/config.toml` (or `.codex/config.toml` for project-scoped config
 
 ```toml
 [mcp_servers.bloodhound_mcp]
-command = "uv"
-args = ["--directory", "/path/to/bloodhound-mcp", "run", "main.py"]
+command = "uvx"
+args = ["--from", "git+https://github.com/mwnickerson/bloodhound_mcp", "bloodhound-mcp"]
 ```
 
-Since the server loads credentials from `.env` automatically, no `env` block is needed. If you prefer to pass them explicitly:
+The server inherits credentials from the process that launches Codex. To keep
+them in the MCP configuration instead, pass them explicitly:
 
 ```toml
 [mcp_servers.bloodhound_mcp]
-command = "uv"
-args = ["--directory", "/path/to/bloodhound-mcp", "run", "main.py"]
+command = "uvx"
+args = ["--from", "git+https://github.com/mwnickerson/bloodhound_mcp", "bloodhound-mcp"]
 
 [mcp_servers.bloodhound_mcp.env]
 BLOODHOUND_DOMAIN = "your-bloodhound-instance.domain.com"
@@ -181,8 +196,8 @@ BLOODHOUND_TOKEN_KEY = "your-token-key"
 
 ### MCP Inspector
 
-- **Command:** `uv`
-- **Args:** `--directory /path/to/bloodhound-mcp run main.py`
+- **Command:** `uvx`
+- **Args:** `--from git+https://github.com/mwnickerson/bloodhound_mcp bloodhound-mcp`
 
 ### BloodHound API Token
 
