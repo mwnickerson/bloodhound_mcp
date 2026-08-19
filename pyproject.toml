@@ -10,6 +10,20 @@ dependencies = [
     "requests==2.32.4",
 ]
 
+[project.scripts]
+bloodhound-mcp = "main:main"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["main"]
+
+[tool.setuptools.packages.find]
+include = ["lib*"]
+namespaces = true
+
 [dependency-groups]
 dev = [
     "black>=25.1.0",
